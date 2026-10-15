@@ -1,0 +1,9 @@
+# Keep line endings consistent across Windows, macOS, and Linux checkouts.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.png binary
+*.ico binary
+*.icns binary
+*.ttf binary
+*.car binary
