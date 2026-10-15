@@ -4,6 +4,7 @@
 export type {
     Channel,
     Frame,
+    IgnoredSender,
     Row,
     Status
 } from "./models.js";

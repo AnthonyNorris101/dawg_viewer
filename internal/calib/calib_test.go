@@ -5,8 +5,6 @@ import (
 	"testing"
 )
 
-// The RadTemp points hard-coded in the Python app must map back onto
-// themselves, and a mid-range reading must land between its neighbours.
 func TestSteinhartRadTemp(t *testing.T) {
 	pts := [3]SteinhartPoint{{336, 266}, {999, 176}, {2924, 68}}
 	conv, _, err := Steinhart(pts, 1000, 4095, true)
@@ -26,8 +24,6 @@ func TestSteinhartRadTemp(t *testing.T) {
 	}
 }
 
-// Same inputs as Calibration_Helpers.py's __main__. The expected values were
-// computed independently with Cramer's rule on the same equations.
 func TestSteinhartCoefficientsMatchPython(t *testing.T) {
 	_, c, err := Steinhart([3]SteinhartPoint{{3500, 0}, {2200, 25}, {900, 100}}, 1000, 4095, true)
 	if err != nil {

@@ -7,7 +7,6 @@ import { createViewSync } from '../plot/sync'
 import { layoutReducer, makeLayout } from '../state/layout'
 import { toolbarButton } from '../ui'
 
-// Placeholder until CSV logs are loaded through the Go backend.
 const session = createDemoSession()
 const sync = createViewSync('viewer')
 const initialLayout = makeLayout([

@@ -26,6 +26,14 @@ export interface Frame {
 }
 
 /**
+ * IgnoredSender is a computer that sent data the session didn't accept.
+ */
+export interface IgnoredSender {
+    "addr": string;
+    "packets": number;
+}
+
+/**
  * Row is every value carried by one telemetry packet.
  */
 export interface Row {
@@ -64,6 +72,17 @@ export interface Status {
     "lastPacketMs": number;
     "badPackets": number;
     "unknownIds": number[] | null;
+
+    /**
+     * Filtering is true when only the profile's device is accepted; until it
+     * is found, nothing is.
+     */
+    "filtering": boolean;
+
+    /**
+     * Ignored lists other senders whose data was dropped.
+     */
+    "ignored": IgnoredSender[] | null;
     "error": string;
 
     /**

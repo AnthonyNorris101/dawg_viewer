@@ -28,7 +28,11 @@ export function StatusHeader() {
   const info = useInfo()
   const st = useStatus()
   const [error, setError] = useState('')
-  const state = STATE_STYLE[st.state] ?? STATE_STYLE.stopped
+  const state =
+    st.state === 'listening' && st.filtering
+      ? { ...STATE_STYLE.listening, label: 'Looking for device' }
+      : (STATE_STYLE[st.state] ?? STATE_STYLE.stopped)
+  const ignored = st.ignored ?? []
 
   const run = (fn: () => Promise<unknown>) => {
     setError('')
@@ -118,7 +122,10 @@ export function StatusHeader() {
         </span>
       </div>
 
-      {(message || (st.unknownIds?.length ?? 0) > 0 || (info?.profileErrors?.length ?? 0) > 0) && (
+      {(message ||
+        ignored.length > 0 ||
+        (st.unknownIds?.length ?? 0) > 0 ||
+        (info?.profileErrors?.length ?? 0) > 0) && (
         <div className="space-y-0.5 border-t border-zinc-800 bg-zinc-900/60 px-3 py-1 text-xs">
           {message && <p className="text-red-300">{message}</p>}
           {(st.unknownIds?.length ?? 0) > 0 && (
@@ -127,6 +134,12 @@ export function StatusHeader() {
               resend them)
             </p>
           )}
+          {ignored.map((g) => (
+            <p key={g.addr} className="text-amber-300">
+              Ignoring data from {g.addr} ({g.packets.toLocaleString()} packets): it isn't{' '}
+              {st.profileName}. Pick the matching device above if that's the one you want.
+            </p>
+          ))}
           {info?.profileErrors?.map((e) => (
             <p key={e.file} className="text-amber-300">
               Skipped device file {e.file}: {e.error}

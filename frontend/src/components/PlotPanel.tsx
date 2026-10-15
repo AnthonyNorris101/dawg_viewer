@@ -24,7 +24,6 @@ export const PlotPanel = memo(function PlotPanel({
   dispatch,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
-  // Cursor readouts are written straight to these spans, bypassing React.
   const valueEls = useRef(new Map<string, HTMLSpanElement>())
 
   const channels = useMemo(

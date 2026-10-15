@@ -14,7 +14,6 @@ interface CardEls {
   value: HTMLSpanElement
 }
 
-/** Big readouts for the channels marked "pinned" in the device profile. */
 export const PinnedCards = memo(function PinnedCards({
   metas,
 }: {
@@ -29,7 +28,6 @@ export const PinnedCards = memo(function PinnedCards({
   )
   const els = useRef(new Map<string, CardEls>())
 
-  // Values and ages are written straight to the DOM on every frame.
   useEffect(() => {
     const update = () => {
       const startedAt = status.get().startedAt
@@ -48,7 +46,6 @@ export const PinnedCards = memo(function PinnedCards({
     }
     update()
     const off = store.subscribe(update)
-    // Ages keep growing when no data arrives, so repaint now and then too.
     const timer = setInterval(update, 500)
     return () => {
       off()

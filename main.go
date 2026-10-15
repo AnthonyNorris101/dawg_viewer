@@ -42,8 +42,6 @@ func main() {
 	}
 }
 
-// configFlag finds "--config <dir>" or "--config=<dir>". It's parsed by hand
-// because the OS can pass extra arguments to GUI apps (e.g. -psn_ on macOS).
 func configFlag(args []string) string {
 	for i, a := range args {
 		for _, name := range []string{"--config", "-config"} {

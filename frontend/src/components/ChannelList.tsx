@@ -1,13 +1,11 @@
 import { memo, useMemo, useState, type Dispatch } from 'react'
 import type { Channel } from '../data/session'
 
-/** What the list needs to show a channel. */
 export type ListChannel = Pick<Channel, 'id' | 'name' | 'group' | 'unit' | 'color'>
 import type { LayoutAction } from '../state/layout'
 
 interface Props {
   channels: ListChannel[]
-  /** Channels shown in the active plot. */
   selectedIds: string[]
   dispatch: Dispatch<LayoutAction>
 }

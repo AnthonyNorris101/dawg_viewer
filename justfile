@@ -1,8 +1,3 @@
-# Dawg Viewer tasks. Run `just` to list them.
-# Needs: just, Go, Node.js and the Wails v3 CLI (wails3).
-
-# PowerShell on Windows so Git Bash isn't required (the bypass is only for
-# this process, so npm.ps1 runs on machines that block scripts); sh elsewhere.
 set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
 
 # List the available commands

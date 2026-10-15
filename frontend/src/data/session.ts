@@ -4,16 +4,13 @@ export interface Channel {
   group: string
   unit: string
   color: string
-  /** Decimal places shown in cursor readouts. */
   precision: number
-  /** One sample per entry of Session.time. */
   data: Float32Array
 }
 
 export interface Session {
   name: string
   sampleRate: number
-  /** Seconds since the start of the log, shared by every channel. */
   time: Float64Array
   channels: Channel[]
   byId: Map<string, Channel>

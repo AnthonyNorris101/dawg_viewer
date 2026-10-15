@@ -7,7 +7,6 @@ const GRID = { stroke: '#27272a', width: 1 }
 const TICKS = { stroke: '#3f3f46', width: 1 }
 const ZOOM_STEP = 0.8
 const PAN_STEP = 0.1
-// Every plot reserves the same gutters so x positions line up across panels.
 const Y_AXIS_SIZE = 52
 const Y_LABEL_SIZE = 16
 
@@ -19,14 +18,10 @@ export interface PlotSeries {
 
 export interface PlotOptions {
   series: PlotSeries[]
-  /** [time, ...one array per series], all the same length. */
   data: uPlot.AlignedData
   sync: ViewSync
-  /** Current data extent; wheel zoom and pan stay inside it. */
   bounds: () => [number, number] | null
-  /** Narrowest x span the wheel can zoom to. */
   minSpan: number
-  /** Sample index under the cursor, null when the pointer leaves. */
   onCursor: (idx: number | null) => void
 }
 
@@ -35,7 +30,6 @@ export interface MountedPlot {
   destroy(): void
 }
 
-// Wheel zooms about the pointer; shift+wheel (or a horizontal wheel) pans.
 function wheelZoom(bounds: PlotOptions['bounds'], minSpan: number): uPlot.Plugin {
   return {
     hooks: {
@@ -79,10 +73,8 @@ function clampShift(shift: number, min: number, max: number, xMin: number, xMax:
   return shift
 }
 
-/** Draws the series inside `host` and keeps the plot sized to it. */
 export function mountPlot(host: HTMLElement, opts: PlotOptions): MountedPlot {
   const { series, sync } = opts
-  // One y scale per unit so channels with unrelated magnitudes stay readable.
   const units = [...new Set(series.map((s) => s.unit))]
 
   const u = new uPlot(
@@ -111,7 +103,6 @@ export function mountPlot(host: HTMLElement, opts: PlotOptions): MountedPlot {
         { stroke: AXIS_STROKE, grid: GRID, ticks: TICKS, font: FONT, size: 28 },
         ...units.map((unit, i) => ({
           scale: unit,
-          // Only the first two units get an axis; the rest would shift the plot area.
           show: i < 2,
           side: i === 0 ? 3 : 1,
           label: unit,

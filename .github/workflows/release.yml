@@ -1,0 +1,195 @@
+name: Build and release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  GIT_COMMITTER_NAME: UGA Motorsports
+  GIT_COMMITTER_EMAIL: noreply@github.com
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+
+      - name: Build frontend
+        run: |
+          wails3 generate bindings -clean=true -ts -i
+          npm --prefix frontend run build
+
+      - name: Go vet and tests
+        run: |
+          go vet ./...
+          go test -race ./...
+
+      - name: Frontend lint and format check
+        run: |
+          npm --prefix frontend run lint
+          npm --prefix frontend run format:check
+
+  build:
+    name: Build (${{ matrix.name }})
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows
+            os: windows-latest
+          - name: macos
+            os: macos-latest
+          - name: linux
+            os: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+
+      - name: Install NSIS
+        if: runner.os == 'Windows'
+        run: |
+          choco install nsis -y --no-progress
+          echo "C:/Program Files (x86)/NSIS" >> "$GITHUB_PATH"
+
+      - name: Build Windows app and installer
+        if: runner.os == 'Windows'
+        run: wails3 task windows:package
+
+      - name: Collect Windows files
+        if: runner.os == 'Windows'
+        run: |
+          mkdir -p dist/portable
+          cp bin/dawg_viewer.exe dist/portable/
+          cp -r internal/config/defaults dist/portable/dawg_config
+          (cd dist/portable && 7z a -tzip ../DawgViewer-windows-amd64.zip .)
+          cp bin/dawg_viewer-amd64-installer.exe dist/DawgViewer-windows-amd64-setup.exe
+          rm -rf dist/portable
+
+      - name: Build macOS app
+        if: runner.os == 'macOS'
+        run: wails3 task darwin:package:universal
+
+      - name: Build macOS disk image
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        run: wails3 task darwin:create:dmg
+
+      - name: Collect macOS files
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dist/portable
+          ditto bin/dawg_viewer.app "dist/portable/Dawg Viewer.app"
+          cp -R internal/config/defaults dist/portable/dawg_config
+          (cd dist/portable && ditto -c -k --sequesterRsrc . ../DawgViewer-macos-universal.zip)
+          rm -rf dist/portable
+          if ls bin/*.dmg >/dev/null 2>&1; then
+            cp bin/*.dmg dist/DawgViewer-macos-universal.dmg
+          fi
+
+      - name: Build Linux app and packages
+        if: runner.os == 'Linux'
+        run: |
+          wails3 task linux:build
+          wails3 task linux:generate:deb
+          wails3 task linux:generate:rpm
+
+      - name: Build AppImage
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        run: wails3 task linux:create:appimage
+
+      - name: Collect Linux files
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p dist/portable
+          cp bin/dawg_viewer dist/portable/
+          cp -r internal/config/defaults dist/portable/dawg_config
+          tar -C dist/portable -czf dist/DawgViewer-linux-amd64.tar.gz .
+          rm -rf dist/portable
+          cp bin/*.deb dist/DawgViewer-linux-amd64.deb
+          cp bin/*.rpm dist/DawgViewer-linux-x86_64.rpm
+          if ls bin/*.AppImage >/dev/null 2>&1; then
+            cp bin/*.AppImage dist/DawgViewer-linux-x86_64.AppImage
+          fi
+
+      - name: List files
+        run: ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dawg-viewer-${{ matrix.name }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Release
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Work out version
+        id: version
+        run: |
+          version=$(yq '.info.version' build/config.yml)
+          echo "tag=v${version}-build.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          cat > notes.md <<EOF
+          Dawg Viewer ${VERSION}, build ${GITHUB_RUN_NUMBER} from ${GITHUB_SHA::7}.
+
+          | System | Download |
+          |---|---|
+          | Windows | \`DawgViewer-windows-amd64-setup.exe\` (installer) or \`DawgViewer-windows-amd64.zip\` (portable) |
+          | macOS (Apple Silicon and Intel) | \`DawgViewer-macos-universal.zip\` or \`.dmg\` |
+          | Linux | \`.deb\`, \`.rpm\`, \`.AppImage\`, or \`DawgViewer-linux-amd64.tar.gz\` (portable) |
+
+          The zip and tar.gz downloads include a \`dawg_config\` folder next to the app, so
+          settings and device files travel with it. Edit the YAML files there to change
+          what the app connects to.
+
+          The builds aren't code-signed. On Windows choose "More info" → "Run anyway"
+          in SmartScreen. On macOS right-click the app and choose Open the first time,
+          or run \`xattr -cr "Dawg Viewer.app"\`.
+          EOF
+          gh release create "$TAG" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "Dawg Viewer ${VERSION} (build ${GITHUB_RUN_NUMBER})" \
+            --notes-file notes.md \
+            --generate-notes

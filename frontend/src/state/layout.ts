@@ -16,7 +16,6 @@ export type LayoutAction =
   | { type: 'removePanel'; panelId: number }
   | { type: 'setActive'; panelId: number }
 
-/** A layout with one plot per entry of `panels`, the first one active. */
 export function makeLayout(panels: string[][]): Layout {
   return {
     panels: panels.map((channelIds, i) => ({ id: i + 1, channelIds })),
@@ -25,7 +24,6 @@ export function makeLayout(panels: string[][]): Layout {
   }
 }
 
-// Untouched panels keep their object identity so memoized plots don't rebuild.
 function updatePanel(layout: Layout, panelId: number, fn: (ids: string[]) => string[]): Layout {
   return {
     ...layout,
@@ -54,7 +52,6 @@ export function layoutReducer(layout: Layout, action: LayoutAction): Layout {
         nextId: layout.nextId + 1,
       }
     case 'removePanel': {
-      // Always keep one panel around; removing the last one just empties it.
       if (layout.panels.length === 1) return updatePanel(layout, action.panelId, () => [])
       const panels = layout.panels.filter((p) => p.id !== action.panelId)
       const activeId = layout.activeId === action.panelId ? panels[0].id : layout.activeId

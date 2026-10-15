@@ -34,7 +34,6 @@ function App() {
           </button>
         ))}
       </nav>
-      {/* Views stay mounted so live data and plot layouts survive tab switches. */}
       <div className={`min-h-0 flex-1 ${tab === 'live' ? '' : 'hidden'}`}>
         <LiveView />
       </div>

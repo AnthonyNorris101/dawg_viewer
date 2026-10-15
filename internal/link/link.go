@@ -1,5 +1,3 @@
-// Package link holds the network I/O used to talk to a logger: the UDP
-// telemetry listener, the UGAMS discovery exchange and one-shot TCP commands.
 package link
 
 import (
@@ -14,14 +12,12 @@ import (
 	"time"
 )
 
-// Packet is one UDP datagram received from a device.
 type Packet struct {
 	Data []byte
 	From netip.Addr
 	At   time.Time
 }
 
-// Listener receives UDP datagrams until closed.
 type Listener struct {
 	conn net.PacketConn
 	stop chan struct{}
@@ -29,8 +25,6 @@ type Listener struct {
 	err  error
 }
 
-// ListenUDP binds addr and delivers every datagram on out. The bind happens
-// before it returns so a busy port is reported immediately.
 func ListenUDP(addr string, out chan<- Packet) (*Listener, error) {
 	conn, err := net.ListenPacket("udp4", addr)
 	if err != nil {
@@ -60,16 +54,12 @@ func ListenUDP(addr string, out chan<- Packet) (*Listener, error) {
 	return l, nil
 }
 
-// Addr is the bound local address.
 func (l *Listener) Addr() net.Addr { return l.conn.LocalAddr() }
 
-// Done is closed when the listener stops, by Close or by a socket error.
 func (l *Listener) Done() <-chan struct{} { return l.done }
 
-// Err is the error that stopped the listener; read it after Done is closed.
 func (l *Listener) Err() error { return l.err }
 
-// Close releases the port and waits until it is free to bind again.
 func (l *Listener) Close() {
 	select {
 	case <-l.stop:
@@ -80,7 +70,6 @@ func (l *Listener) Close() {
 	<-l.done
 }
 
-// Found is a device that answered discovery.
 type Found struct {
 	Type     string     `json:"type"`
 	ID       string     `json:"id"`
@@ -89,9 +78,6 @@ type Found struct {
 	Addr     netip.Addr `json:"-"`
 }
 
-// Discover broadcasts request to port on every IPv4 network this computer is
-// on and collects UGAMS_DATA replies until wait has passed. The firmware
-// answers to the request's source port, so no fixed local port is needed.
 func Discover(ctx context.Context, port int, request string, wait time.Duration) ([]Found, error) {
 	conn, err := net.ListenPacket("udp4", ":0")
 	if err != nil {
@@ -143,9 +129,6 @@ func Discover(ctx context.Context, port int, request string, wait time.Duration)
 	}
 }
 
-// broadcastAddrs returns the limited broadcast address plus the directed
-// broadcast address of each IPv4 network. On machines with several adapters
-// (common on Windows) 255.255.255.255 only goes out of one of them.
 func broadcastAddrs() []netip.Addr {
 	out := []netip.Addr{netip.AddrFrom4([4]byte{255, 255, 255, 255})}
 	ifaces, err := net.Interfaces()
@@ -177,9 +160,6 @@ func broadcastAddrs() []netip.Addr {
 	return out
 }
 
-// SendCommand opens a TCP connection, writes payload (zero-padded to padTo
-// bytes when padTo is larger) and waits for the device to close the
-// connection, like the old Python app did.
 func SendCommand(ctx context.Context, host netip.Addr, port int, payload []byte, padTo int) error {
 	if !host.IsValid() {
 		return errors.New("no device address to send the command to")
@@ -200,7 +180,7 @@ func SendCommand(ctx context.Context, host netip.Addr, port int, payload []byte,
 	_, err = io.Copy(io.Discard, conn)
 	var ne net.Error
 	if errors.As(err, &ne) && ne.Timeout() {
-		return nil // the device acted on it but never closed; nothing more to read
+		return nil
 	}
 	return err
 }

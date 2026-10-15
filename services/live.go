@@ -1,5 +1,3 @@
-// Package services exposes the backend to the frontend through Wails bindings
-// and events. Services stay thin: the work happens in internal/.
 package services
 
 import (
@@ -15,7 +13,6 @@ import (
 	"dawg_viewer/internal/live"
 )
 
-// Event names the frontend subscribes to.
 const (
 	EventFrame    = "live:frame"
 	EventStatus   = "live:status"
@@ -28,14 +25,12 @@ func init() {
 	application.RegisterEvent[[]live.Channel](EventChannels)
 }
 
-// ProfileSummary is a device profile as listed in the UI.
 type ProfileSummary struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	File string `json:"file"`
 }
 
-// Info describes the configuration the app is running with.
 type Info struct {
 	ConfigDir     config.Dir                    `json:"configDir"`
 	Settings      config.Settings               `json:"settings"`
@@ -46,8 +41,6 @@ type Info struct {
 	SettingsError string                        `json:"settingsError"`
 }
 
-// LiveService connects to one device at a time and streams its data to the
-// frontend.
 type LiveService struct {
 	override string
 
@@ -62,8 +55,6 @@ type LiveService struct {
 	session     *live.Session
 }
 
-// NewLiveService uses configDir as the configuration folder when it isn't
-// empty (from the --config flag); otherwise the folder is found automatically.
 func NewLiveService(configDir string) *LiveService {
 	return &LiveService{override: configDir}
 }
@@ -76,8 +67,6 @@ func (s *LiveService) ServiceStartup(ctx context.Context, _ application.ServiceO
 		return err
 	}
 	if id := s.settings.Device; id != "" {
-		// A busy port or missing profile shouldn't stop the app opening; the UI
-		// shows the problem and lets the user pick again.
 		_ = s.connectLocked(id)
 	}
 	return nil
@@ -101,7 +90,6 @@ func (s *LiveService) loadLocked() error {
 	return nil
 }
 
-// Info returns the configuration in use.
 func (s *LiveService) Info() Info {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -128,8 +116,6 @@ func (s *LiveService) infoLocked() Info {
 	return info
 }
 
-// Connect switches to the device profile with the given id and remembers the
-// choice in settings.yaml.
 func (s *LiveService) Connect(profileID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -145,14 +131,12 @@ func (s *LiveService) Connect(profileID string) error {
 	return nil
 }
 
-// Disconnect stops reading the current device.
 func (s *LiveService) Disconnect() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.stopLocked()
 }
 
-// Reload re-reads every config file and reconnects to the chosen device.
 func (s *LiveService) Reload() (Info, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -174,7 +158,6 @@ func (s *LiveService) Reload() (Info, error) {
 	return s.infoLocked(), err
 }
 
-// Status returns the current connection status.
 func (s *LiveService) Status() live.Status {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -188,7 +171,6 @@ func (s *LiveService) Status() live.Status {
 	return s.session.Status()
 }
 
-// Channels returns the channels seen since connecting.
 func (s *LiveService) Channels() []live.Channel {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -198,7 +180,6 @@ func (s *LiveService) Channels() []live.Channel {
 	return s.session.Channels()
 }
 
-// OpenConfigFolder shows the configuration folder in the system file manager.
 func (s *LiveService) OpenConfigFolder() error {
 	s.mu.Lock()
 	dir := s.dir.Path
@@ -242,7 +223,6 @@ func (s *LiveService) stopLocked() {
 	}
 }
 
-// emitter forwards session output to the frontend as Wails events.
 type emitter struct{}
 
 func (emitter) Frame(f live.Frame)        { emit(EventFrame, f) }

@@ -1,8 +1,5 @@
 import { CHANNEL_COLORS, type Channel, type Session } from './session'
 
-// Synthetic session so the UI has something to draw until real log loading is
-// wired up. None of these values come from a car.
-
 const TAU = Math.PI * 2
 const SAMPLE_RATE = 500
 const DURATION_S = 300
@@ -18,7 +15,6 @@ interface ChannelDef {
   gen: Gen
 }
 
-// Small deterministic PRNG so the demo data is identical on every launch.
 function mulberry32(seed: number) {
   return () => {
     seed = (seed + 0x6d2b79f5) | 0

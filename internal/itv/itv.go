@@ -1,6 +1,3 @@
-// Package itv implements the ID-Type-Value encoding used by the ILTM firmware
-// (Firmware/ILTM_Module/ITV.h). Every field is [id u8][type u8][value], with
-// multi-byte values little-endian.
 package itv
 
 import (
@@ -10,16 +7,15 @@ import (
 	"math"
 )
 
-// Type codes, as defined by the firmware.
 const (
-	TypeName   uint8 = 0x00 // [len u8][utf-8] — registers a name for the id
+	TypeName   uint8 = 0x00
 	TypeU8     uint8 = 0x01
 	TypeU16    uint8 = 0x02
 	TypeU32    uint8 = 0x03
 	TypeF32    uint8 = 0x04
-	TypeString uint8 = 0x05 // [len u8][utf-8]
+	TypeString uint8 = 0x05
 	TypeBool   uint8 = 0x06
-	TypeCmd    uint8 = 0x07 // u8 command enum
+	TypeCmd    uint8 = 0x07
 	TypeU64    uint8 = 0x08
 )
 
@@ -33,19 +29,17 @@ var fixedSize = [...]int{
 	TypeU64:  8,
 }
 
-// Field is one decoded ITV entry.
 type Field struct {
 	ID   uint8
 	Type uint8
-	// Num holds every non-string value as a float64 (bool is 0 or 1).
+
 	Num float64
-	// Int holds the exact value of integer types, which Num can't for u64 > 2^53.
+
 	Int uint64
-	// Str holds the text of name and string fields.
+
 	Str string
 }
 
-// IsText reports whether the field carries text rather than a number.
 func (f Field) IsText() bool { return f.Type == TypeName || f.Type == TypeString }
 
 var (
@@ -53,9 +47,6 @@ var (
 	ErrUnknownType = errors.New("itv: unknown type")
 )
 
-// Decode parses every field in b. On malformed input it returns the fields
-// decoded before the problem together with an error, matching how both the
-// firmware and the old Python decoder stop at the first bad field.
 func Decode(b []byte) ([]Field, error) {
 	fields := make([]Field, 0, len(b)/6)
 	i := 0
@@ -113,8 +104,6 @@ func Decode(b []byte) ([]Field, error) {
 	return fields, nil
 }
 
-// Encoders append one field to dst and return the extended slice.
-
 func AppendU8(dst []byte, id, v uint8) []byte { return append(dst, id, TypeU8, v) }
 
 func AppendCmd(dst []byte, id, v uint8) []byte { return append(dst, id, TypeCmd, v) }
@@ -143,7 +132,6 @@ func AppendF32(dst []byte, id uint8, v float32) []byte {
 	return binary.LittleEndian.AppendUint32(append(dst, id, TypeF32), math.Float32bits(v))
 }
 
-// AppendName registers a channel name. Names longer than 255 bytes are cut.
 func AppendName(dst []byte, id uint8, name string) []byte {
 	return appendText(dst, id, TypeName, name)
 }

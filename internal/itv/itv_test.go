@@ -43,8 +43,6 @@ func TestRoundTrip(t *testing.T) {
 	}
 }
 
-// Bytes produced by the firmware's ITV::writeF32 for id 0 = 1234.0 and the
-// Python itv_cmd/itv_u8 command packet for Name_Sync_Req.
 func TestFirmwareBytes(t *testing.T) {
 	got, err := Decode([]byte{0x00, 0x04, 0x00, 0x40, 0x9A, 0x44})
 	if err != nil || len(got) != 1 || got[0].Num != 1234 {
@@ -78,8 +76,6 @@ func TestMalformedKeepsEarlierFields(t *testing.T) {
 	}
 }
 
-// Zero padding decodes as empty id-0 names, which is what makes padding
-// command packets to 256 bytes safe for the firmware decoder.
 func TestZeroPaddingIsHarmless(t *testing.T) {
 	b := make([]byte, 256)
 	copy(b, AppendU8(AppendCmd(nil, 1, 3), 2, 0))

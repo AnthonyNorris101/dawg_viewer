@@ -1,20 +1,13 @@
 import type uPlot from 'uplot'
 
-// Shared view state for a group of plots (the live view has one, the log
-// viewer another). It lives outside React on purpose: cursor moves and zooms
-// happen at pointer rate, and routing them through component state would
-// re-render the whole tree on every event.
-
 export interface Range {
   min: number
   max: number
 }
 
 export interface ViewSync {
-  /** uPlot cursor sync key shared by the group. */
   cursorKey: string
   register(u: uPlot): () => void
-  /** Called from a plot's setScale hook; mirrors its x range onto the others. */
   publishRange(source: uPlot): void
   setRange(next: Range): void
   range(): Range | null
@@ -47,7 +40,6 @@ export function createViewSync(cursorKey: string): ViewSync {
     publishRange(source) {
       const { min, max } = source.scales.x
       if (min == null || max == null) return
-      // The plots we update fire their own setScale hooks; this stops the echo.
       if (current && current.min === min && current.max === max) return
       apply({ min, max }, source)
     },

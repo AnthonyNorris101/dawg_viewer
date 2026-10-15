@@ -89,13 +89,11 @@ func TestPacketsBecomeRows(t *testing.T) {
 	names = itv.AppendName(names, 11, "RPM")
 	names = itv.AppendName(names, 28, "Brake")
 	names = itv.AppendName(names, 112, "PosLong_H")
-	names = itv.AppendName(names, 113, "PosLat_L") // the firmware's wrong name
+	names = itv.AppendName(names, 113, "PosLat_L")
 	conn.Write(names)
 
-	// Time-sync requests share the port and must not become data.
 	conn.Write(itv.AppendU64(itv.AppendU32(itv.AppendCmd(nil, 1, 1), 2, 7), 3, 99))
 
-	// Id 77 has no name: the old app dropped the whole packet here.
 	var data []byte
 	data = itv.AppendF32(data, 77, 1)
 	data = itv.AppendF32(data, 11, 6500)
@@ -180,8 +178,6 @@ func TestBusyPortFailsFast(t *testing.T) {
 	}
 }
 
-// Switching devices stops one session and starts another on the same port
-// straight away; the port must be free by the time Stop returns.
 func TestRestartRebindsSamePort(t *testing.T) {
 	p := config.Profile{ID: "rebind", Telemetry: config.Telemetry{Listen: "127.0.0.1:0"}}
 	dir := t.TempDir()
@@ -197,5 +193,38 @@ func TestRestartRebindsSamePort(t *testing.T) {
 			t.Fatalf("restart %d: %v", i, err)
 		}
 		s.Stop()
+	}
+}
+
+func TestOnlyTheProfilesDeviceIsAccepted(t *testing.T) {
+	off := false
+	cases := []struct {
+		name    string
+		profile config.Profile
+		accept  bool
+	}{
+		{"other sender", config.Profile{ID: "a", Address: "10.9.9.9"}, false},
+		{"profile address", config.Profile{ID: "b", Address: "127.0.0.1"}, true},
+		{"filter off", config.Profile{ID: "c", Address: "10.9.9.9",
+			Telemetry: config.Telemetry{OnlyFromDevice: &off}}, true},
+		{"nothing to match", config.Profile{ID: "d"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s, rec, conn := startTestSession(t, tc.profile)
+			conn.Write(itv.AppendF32(itv.AppendName(nil, 11, "RPM"), 11, 5000))
+			time.Sleep(700 * time.Millisecond)
+
+			rec.mu.Lock()
+			rows := len(rec.rows)
+			rec.mu.Unlock()
+			st := s.Status()
+			if got := rows > 0; got != tc.accept {
+				t.Fatalf("accepted = %v, want %v (status %+v)", got, tc.accept, st)
+			}
+			if !tc.accept && (len(st.Ignored) != 1 || st.Ignored[0].Addr != "127.0.0.1" || !st.Filtering) {
+				t.Fatalf("ignored sender not reported: %+v", st)
+			}
+		})
 	}
 }

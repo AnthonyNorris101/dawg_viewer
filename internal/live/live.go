@@ -1,5 +1,3 @@
-// Package live turns telemetry packets from one device into rows of named,
-// calibrated values and hands them to the UI at a fixed frame rate.
 package live
 
 import (
@@ -17,60 +15,61 @@ import (
 	"dawg_viewer/internal/link"
 )
 
-// Reserved ITV ids (the firmware reserves 0–9).
 const (
 	idTimeTx  = 0
 	idCommand = 1
 )
 
-// Row is every value carried by one telemetry packet.
 type Row struct {
-	// T is seconds since the session started, from this computer's clock.
 	T float64            `json:"t"`
 	V map[string]float64 `json:"v"`
 }
 
-// Frame is everything received since the previous frame.
 type Frame struct {
 	Rows []Row `json:"rows"`
 }
 
-// Channel describes a channel the session has seen.
 type Channel struct {
 	Name string `json:"name"`
-	// ID is the device's signal id, or -1 for channels computed by the app.
+
 	ID   int                `json:"id"`
 	Meta config.ChannelMeta `json:"meta"`
 }
 
-// Status is a snapshot of the connection for the UI.
 type Status struct {
 	Profile      string  `json:"profile"`
 	ProfileName  string  `json:"profileName"`
-	State        string  `json:"state"` // listening | receiving | stale | stopped | error
+	State        string  `json:"state"`
 	Listen       string  `json:"listen"`
 	DeviceIP     string  `json:"deviceIp"`
-	DeviceSource string  `json:"deviceSource"` // discovery | telemetry | config
+	DeviceSource string  `json:"deviceSource"`
 	Firmware     string  `json:"firmware"`
 	Packets      uint64  `json:"packets"`
 	PacketRate   float64 `json:"packetRate"`
-	// LastPacketMs is the age of the newest packet, or -1 before the first.
+
 	LastPacketMs int64  `json:"lastPacketMs"`
 	BadPackets   uint64 `json:"badPackets"`
 	UnknownIDs   []int  `json:"unknownIds"`
-	Error        string `json:"error"`
-	// StartedAt is the session start as Unix milliseconds; Row.T counts from it.
+
+	Filtering bool `json:"filtering"`
+
+	Ignored []IgnoredSender `json:"ignored"`
+	Error   string          `json:"error"`
+
 	StartedAt int64 `json:"startedAt"`
 }
 
-// Sink receives the session's output. Calls come from the session goroutine.
+type IgnoredSender struct {
+	Addr    string `json:"addr"`
+	Packets uint64 `json:"packets"`
+}
+
 type Sink interface {
 	Frame(Frame)
 	Status(Status)
 	Channels([]Channel)
 }
 
-// Options configure a session.
 type Options struct {
 	Profile    config.Profile
 	ConfigDir  string
@@ -78,7 +77,6 @@ type Options struct {
 	StaleAfter time.Duration
 }
 
-// Session reads one device until Stop is called.
 type Session struct {
 	opts     Options
 	sink     Sink
@@ -91,8 +89,6 @@ type Session struct {
 	channels []Channel
 }
 
-// Start binds the telemetry port and starts reading. It fails straight away if
-// the port is in use (for example by the old Python app).
 func Start(parent context.Context, opts Options, sink Sink) (*Session, error) {
 	if opts.FrameRate <= 0 {
 		opts.FrameRate = 20
@@ -124,21 +120,18 @@ func Start(parent context.Context, opts Options, sink Sink) (*Session, error) {
 	return s, nil
 }
 
-// Stop ends the session and waits until its port is free again.
 func (s *Session) Stop() {
 	s.cancel()
 	<-s.done
 	s.listener.Close()
 }
 
-// Status returns the latest connection snapshot.
 func (s *Session) Status() Status {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.status
 }
 
-// Channels returns every channel seen so far.
 func (s *Session) Channels() []Channel {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -157,8 +150,6 @@ func discoverLoop(ctx context.Context, d config.Discovery, out chan<- link.Found
 				case <-ctx.Done():
 					return
 				}
-				// Ask again now and then: it keeps the device sending to this
-				// computer if its address changes or the device restarts.
 				wait = 15 * time.Second
 				break
 			}
@@ -171,7 +162,6 @@ func discoverLoop(ctx context.Context, d config.Discovery, out chan<- link.Found
 	}
 }
 
-// hub owns all mutable session state; only its goroutine touches it.
 type hub struct {
 	opts    Options
 	session *Session
@@ -200,7 +190,12 @@ type hub struct {
 
 	device       netip.Addr
 	deviceSource string
-	status       Status
+
+	strict     bool
+	configAddr netip.Addr
+	discovered netip.Addr
+	ignored    map[netip.Addr]uint64
+	status     Status
 }
 
 func newHub(opts Options, s *Session) *hub {
@@ -216,6 +211,7 @@ func newHub(opts Options, s *Session) *hub {
 		latest:     map[string]float64{},
 		known:      map[string]bool{},
 		unknown:    map[uint8]bool{},
+		ignored:    map[netip.Addr]uint64{},
 		nameReqErr: make(chan error, 1),
 	}
 	if _, ok := h.names[idTimeTx]; !ok {
@@ -239,8 +235,12 @@ func newHub(opts Options, s *Session) *hub {
 	if p.Address != "" {
 		if a, err := netip.ParseAddr(p.Address); err == nil {
 			h.device, h.deviceSource = a, "config"
+			h.configAddr = a
 		}
 	}
+
+	onlyFromDevice := p.Telemetry.OnlyFromDevice == nil || *p.Telemetry.OnlyFromDevice
+	h.strict = onlyFromDevice && (p.Discovery.Enabled || h.configAddr.IsValid())
 	h.status = Status{
 		Profile:      p.ID,
 		ProfileName:  p.Name,
@@ -319,6 +319,8 @@ func (h *hub) run(ctx context.Context, packets <-chan link.Packet, lst *link.Lis
 			}
 		case f := <-found:
 			h.device, h.deviceSource = f.Addr, "discovery"
+			h.discovered = f.Addr
+			delete(h.ignored, f.Addr)
 			h.status.Firmware = f.Firmware
 		case err := <-h.nameReqErr:
 			h.nameReqRun = false
@@ -336,6 +338,10 @@ func (h *hub) run(ctx context.Context, packets <-chan link.Packet, lst *link.Lis
 }
 
 func (h *hub) handle(ctx context.Context, p link.Packet) {
+	if h.strict && !h.accepts(p.From) {
+		h.ignored[p.From]++
+		return
+	}
 	fields, err := itv.Decode(p.Data)
 	if err != nil {
 		h.status.BadPackets++
@@ -349,7 +355,6 @@ func (h *hub) handle(ctx context.Context, p link.Packet) {
 		h.device, h.deviceSource = p.From, "telemetry"
 	}
 
-	// Command packets (time-sync requests) share the port but aren't data.
 	for _, f := range fields {
 		if f.ID == idCommand && !f.IsText() {
 			return
@@ -368,7 +373,6 @@ func (h *hub) handle(ctx context.Context, p link.Packet) {
 		}
 		name, ok := h.names[f.ID]
 		if !ok {
-			// Unlike the Python app, keep the rest of the packet.
 			h.unknown[f.ID] = true
 			needNames = true
 			continue
@@ -389,7 +393,6 @@ func (h *hub) handle(ctx context.Context, p link.Packet) {
 		return
 	}
 
-	// Channels computed here, as in the old app.
 	row.V["Time_rx"] = row.T * 1000
 	if !h.lastRx.IsZero() {
 		row.V["RX_INT"] = float64(p.At.Sub(h.lastRx).Microseconds()) / 1000
@@ -418,6 +421,10 @@ func (h *hub) handle(ctx context.Context, p link.Packet) {
 	h.pending = append(h.pending, row)
 }
 
+func (h *hub) accepts(a netip.Addr) bool {
+	return a.IsValid() && (a == h.discovered || a == h.configAddr)
+}
+
 func (h *hub) learnName(id uint8, name string) {
 	if name == "" {
 		return
@@ -432,7 +439,6 @@ func (h *hub) learnName(id uint8, name string) {
 	delete(h.unknown, id)
 }
 
-// requestNames asks the device to resend its name list, at most every 2 s.
 func (h *hub) requestNames(ctx context.Context, now time.Time) {
 	cmds := h.opts.Profile.Commands
 	cmd, ok := cmds.List[cmds.NameSync]
@@ -509,8 +515,16 @@ func (h *hub) publishStatus(now time.Time) {
 	}
 	sort.Ints(st.UnknownIDs)
 
+	st.Filtering = h.strict
+	st.Ignored = st.Ignored[:0]
+	for a, n := range h.ignored {
+		st.Ignored = append(st.Ignored, IgnoredSender{a.String(), n})
+	}
+	sort.Slice(st.Ignored, func(i, j int) bool { return st.Ignored[i].Addr < st.Ignored[j].Addr })
+
 	snap := *st
 	snap.UnknownIDs = append([]int{}, st.UnknownIDs...)
+	snap.Ignored = append([]IgnoredSender{}, st.Ignored...)
 	h.session.mu.Lock()
 	h.session.status = snap
 	h.session.mu.Unlock()

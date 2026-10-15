@@ -11,7 +11,6 @@ interface Props {
   panel: Panel
   index: number
   active: boolean
-  /** Names of channels the device has sent so far. */
   known: ReadonlySet<string>
   metas: Record<string, ChannelMeta | undefined>
   sync: ViewSync
@@ -34,7 +33,6 @@ export const LivePlotPanel = memo(function LivePlotPanel({
   const hostRef = useRef<HTMLDivElement>(null)
   const valueEls = useRef(new Map<string, HTMLSpanElement>())
 
-  // Selected channels the device hasn't sent yet wait off the plot.
   const namesKey = panel.channelIds.filter((n) => known.has(n)).join('\n')
   const names = useMemo(() => (namesKey ? namesKey.split('\n') : []), [namesKey])
   const waiting = panel.channelIds.filter((n) => !known.has(n))
@@ -55,7 +53,6 @@ export const LivePlotPanel = memo(function LivePlotPanel({
     const plot = mountPlot(host, {
       series: names.map((n) => ({
         name: metas[n]?.label || n,
-        // Channels without a unit get their own scale so they stay readable.
         unit: metas[n]?.unit || n,
         color: colorFor(n),
       })),

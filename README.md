@@ -6,6 +6,9 @@ app in `FSAE_Data_Acquisition/Software`. Runs on Windows, macOS and Linux.
 Status: live data view done. Next: log browser/CSV downloader, then viewing
 CSV logs in the Viewer tab.
 
+How it works and why it's built this way: see [docs/](docs/README.md). The
+code itself carries almost no comments; the reasoning lives there.
+
 ## Using it
 
 1. Join the same network as the logger (the pit router).
@@ -59,6 +62,20 @@ just build        # build for this OS into bin/
 The simulator (`cmd/iltm-sim`) speaks the logger's protocol (discovery,
 telemetry at 50 Hz, name sync), so the app works without the car. With
 `just simulate` it stops when you close the app.
+
+## Releases
+
+Every push to `main` runs `.github/workflows/release.yml`: tests, then builds
+on Windows, macOS and Linux runners, then publishes a GitHub release tagged
+`v<version>-build.<n>` with:
+
+- Windows: installer (`-setup.exe`) and portable zip
+- macOS: universal (Apple Silicon + Intel) `.app` in a zip, plus a `.dmg`
+- Linux: `.deb`, `.rpm`, AppImage and portable `.tar.gz`
+
+The portable downloads include a `dawg_config` folder next to the app. The
+version comes from `info.version` in `build/config.yml`; bump it there for a
+new version. Pull requests are tested and built but not released.
 
 Layout:
 

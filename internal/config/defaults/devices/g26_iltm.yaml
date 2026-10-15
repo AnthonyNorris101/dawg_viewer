@@ -12,6 +12,11 @@ telemetry:
   # UDP address the app listens on. The logger sends ITV telemetry to port
   # "udpPort" from its own config.json (5002 by default).
   listen: 0.0.0.0:5002
+  # Only use data from this device (found by discovery, or the address
+  # above). Every device answers discovery, so with the car and a UNO Q on one
+  # network both send here. Set to false if discovery can't work on your
+  # network and the address isn't known.
+  only_from_device: true
 
 discovery:
   # The app broadcasts the request; the logger answers with its id and then

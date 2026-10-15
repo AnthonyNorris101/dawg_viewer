@@ -6,13 +6,10 @@ import { LiveService } from '../../bindings/dawg_viewer/services'
 import { CHANNEL_COLORS } from '../data/session'
 import { LiveStore } from './store'
 
-// Assumed upper bound on the device's packet rate, used to size history.
 const MAX_RATE_HZ = 60
 
-/** Live rows from the backend, shared by every live component. */
 export const store = new LiveStore(30 * 60 * MAX_RATE_HZ)
 
-/** A tiny observable value for useSyncExternalStore. */
 export function observable<T>(initial: T) {
   let value = initial
   const listeners = new Set<() => void>()
@@ -44,6 +41,8 @@ const EMPTY_STATUS: Status = {
   lastPacketMs: -1,
   badPackets: 0,
   unknownIds: [],
+  filtering: false,
+  ignored: [],
   error: '',
   startedAt: 0,
 }
@@ -54,7 +53,6 @@ export const info = observable<Info | null>(null)
 
 const colors = new Map<string, string>()
 
-/** A stable colour per channel name, in order of first appearance. */
 export function colorFor(name: string): string {
   let c = colors.get(name)
   if (!c) {
@@ -65,14 +63,12 @@ export function colorFor(name: string): string {
 }
 
 function applyStatus(next: Status) {
-  // A new session numbers its rows from its own start time.
   if (next.startedAt !== status.get().startedAt && next.startedAt !== 0) store.reset()
   status.set(next)
 }
 
 let started = false
 
-/** Subscribes to backend events and loads the current state. Safe to call twice. */
 export function startLive() {
   if (started) return
   started = true
@@ -82,7 +78,6 @@ export function startLive() {
   void refresh()
 }
 
-/** Re-reads config info, status and channels from the backend. */
 export async function refresh() {
   const [i, s, c] = await Promise.all([
     LiveService.Info(),

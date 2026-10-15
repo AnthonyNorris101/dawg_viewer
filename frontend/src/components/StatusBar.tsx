@@ -15,7 +15,6 @@ export const StatusBar = memo(function StatusBar({
   const rangeEl = useRef<HTMLSpanElement>(null)
   const { time } = session
 
-  // Updated by direct DOM writes: these change on every pointer move.
   useEffect(() => {
     const offCursor = sync.onCursor((idx) => {
       if (cursorEl.current) cursorEl.current.textContent = idx == null ? '–' : seconds(time[idx])

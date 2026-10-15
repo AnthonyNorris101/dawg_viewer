@@ -2,13 +2,10 @@ import { useSyncExternalStore } from 'react'
 import { createViewSync, type Range } from '../plot/sync'
 import { observable, store } from './connection'
 
-/** View sync shared by every live plot. */
 export const liveSync = createViewSync('live')
 
 interface FollowState {
-  /** Keep the plots on the newest data. */
   follow: boolean
-  /** Seconds shown while following; Infinity shows everything. */
   windowS: number
 }
 
@@ -27,8 +24,6 @@ function apply() {
 
 store.subscribe(apply)
 
-// Any range we didn't set came from the user zooming or panning: stop
-// following so the view holds still.
 liveSync.onRange((r) => {
   const s = state.get()
   if (s.follow && expected && (r.min !== expected.min || r.max !== expected.max)) {

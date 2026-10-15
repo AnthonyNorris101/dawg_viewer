@@ -1,6 +1,3 @@
-// Package config finds, seeds and loads the app's plain-text configuration:
-// settings.yaml plus one YAML profile per device in devices/. See
-// defaults/README.txt for the user-facing description.
 package config
 
 import (
@@ -28,17 +25,12 @@ const (
 	EnvVar          = "DAWG_CONFIG"
 )
 
-// Dir is the configuration folder in use and how it was chosen.
 type Dir struct {
 	Path string `json:"path"`
-	// Source is "override", "portable" or "user".
+
 	Source string `json:"source"`
 }
 
-// Locate picks the configuration folder: override (from --config or the
-// DAWG_CONFIG variable), then a portable "dawg_config" folder next to the app,
-// then the per-user config folder. The folder is created and seeded with the
-// default files if it doesn't exist yet.
 func Locate(override string) (Dir, error) {
 	if override == "" {
 		override = os.Getenv(EnvVar)
@@ -66,8 +58,6 @@ func Locate(override string) (Dir, error) {
 	return Dir{p, "user"}, seed(p)
 }
 
-// appDir is the folder the user sees the app in: the executable's folder, or
-// the folder holding the .app bundle on macOS.
 func appDir() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
@@ -85,9 +75,6 @@ func appDir() (string, error) {
 	return dir, nil
 }
 
-// seed writes any missing top-level default files, and the default device
-// profiles if there is no devices/ folder yet. Existing files are never
-// overwritten, and deleted profiles stay deleted.
 func seed(dir string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -118,7 +105,6 @@ func seed(dir string) error {
 	})
 }
 
-// Settings is settings.yaml.
 type Settings struct {
 	Device         string  `yaml:"device" json:"device"`
 	FrameRate      int     `yaml:"frame_rate" json:"frameRate"`
@@ -145,7 +131,6 @@ func (s *Settings) applyDefaults() {
 	}
 }
 
-// LoadSettings reads settings.yaml, filling in defaults for anything missing.
 func LoadSettings(dir string) (Settings, error) {
 	var s Settings
 	err := readYAML(filepath.Join(dir, "settings.yaml"), &s)
@@ -153,8 +138,6 @@ func LoadSettings(dir string) (Settings, error) {
 	return s, err
 }
 
-// SaveDevice records the chosen device in settings.yaml by rewriting only the
-// "device:" line, so the user's comments and layout stay exactly as they were.
 func SaveDevice(dir, id string) error {
 	p := filepath.Join(dir, "settings.yaml")
 	b, err := os.ReadFile(p)
@@ -185,7 +168,6 @@ func SaveDevice(dir, id string) error {
 	return os.Rename(tmp, p)
 }
 
-// Profile describes one device the app can read data from (devices/*.yaml).
 type Profile struct {
 	ID           string                 `yaml:"id" json:"id"`
 	Name         string                 `yaml:"name" json:"name"`
@@ -197,12 +179,14 @@ type Profile struct {
 	Combine      []Combine              `yaml:"combine" json:"-"`
 	Calibrations map[string]Calibration `yaml:"calibrations" json:"-"`
 	Channels     map[string]ChannelMeta `yaml:"channels" json:"channels"`
-	// File is the profile's path on disk.
+
 	File string `yaml:"-" json:"file"`
 }
 
 type Telemetry struct {
 	Listen string `yaml:"listen" json:"listen"`
+
+	OnlyFromDevice *bool `yaml:"only_from_device" json:"onlyFromDevice"`
 }
 
 type Discovery struct {
@@ -242,7 +226,6 @@ type Calibration struct {
 	ThermistorToGround *bool        `yaml:"thermistor_to_ground"`
 }
 
-// ChannelMeta controls how a channel is displayed.
 type ChannelMeta struct {
 	Label     string   `yaml:"label" json:"label,omitempty"`
 	Unit      string   `yaml:"unit" json:"unit,omitempty"`
@@ -274,14 +257,11 @@ func (p *Profile) applyDefaults() {
 	}
 }
 
-// ProfileError reports a device file that couldn't be used.
 type ProfileError struct {
 	File string `json:"file"`
 	Err  string `json:"error"`
 }
 
-// LoadProfiles reads every devices/*.yaml file, sorted by name. Broken files
-// are reported in the second return value instead of stopping the others.
 func LoadProfiles(dir string) ([]Profile, []ProfileError) {
 	files, _ := filepath.Glob(filepath.Join(dir, "devices", "*.yaml"))
 	more, _ := filepath.Glob(filepath.Join(dir, "devices", "*.yml"))
@@ -313,14 +293,12 @@ func LoadProfiles(dir string) ([]Profile, []ProfileError) {
 	return out, bad
 }
 
-// LoadNames returns the cached signal names for a device.
 func LoadNames(dir, profileID string) map[uint8]string {
 	names := map[uint8]string{}
 	_ = readYAML(namesPath(dir, profileID), &names)
 	return names
 }
 
-// SaveNames caches the signal names learned from a device.
 func SaveNames(dir, profileID string, names map[uint8]string) error {
 	p := namesPath(dir, profileID)
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -344,7 +322,6 @@ func namesPath(dir, profileID string) string {
 	return filepath.Join(dir, "cache", safe+".names.yaml")
 }
 
-// ResolvePath makes p absolute relative to the config folder.
 func ResolvePath(dir, p string) string {
 	if filepath.IsAbs(p) {
 		return p

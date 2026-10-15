@@ -19,6 +19,11 @@ address: ""
 
 telemetry:
   listen: 0.0.0.0:5002
+  # Only use data from this device (found by discovery, or the address
+  # above). Every device answers discovery, so with the car and a UNO Q on one
+  # network both send here. Set to false if discovery can't work on your
+  # network and the address isn't known.
+  only_from_device: true
 
 discovery:
   enabled: true

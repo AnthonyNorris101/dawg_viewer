@@ -1,14 +1,3 @@
-// Command iltm-sim pretends to be the ILTM logger so the app can be tested
-// without the car. It speaks the same protocol as Firmware/ILTM_Module:
-//
-//   - answers "UGAMS_DISCOVER" on UDP 4999 and then sends telemetry only to
-//     the computer that asked;
-//   - sends ITV telemetry (float32 values, id 0 = milliseconds since start)
-//     to UDP 5002, and the id→name list every 10 s;
-//   - accepts one command per TCP connection on 2002 and resends the names
-//     on Name_Sync_Req (id 3).
-//
-// Run it with: go run ./cmd/iltm-sim
 package main
 
 import (
@@ -36,8 +25,6 @@ func speed(t float64) float64 { return 38 + 18*math.Sin(tau*t/23) + 7*math.Sin(t
 func pedal(t float64) float64 { return math.Sin(tau*t/23 + 0.9) }
 func steer(t float64) float64 { return 70*math.Sin(tau*t/11) + 20*math.Sin(tau*t/3.7) }
 
-// Ids and names follow the ILTM's vehicle config. The names of 111 and 113
-// copy the firmware's mistake so the app's rename fix gets exercised.
 var signals = []signal{
 	{11, "RPM", func(t float64) float64 { return 4000 + speed(t)*110 }},
 	{12, "CLT1", func(t float64) float64 { return 95 - 30*math.Exp(-t/60) }},
@@ -47,7 +34,7 @@ var signals = []signal{
 	{18, "BatV", func(t float64) float64 { return 13.6 + 0.2*math.Sin(tau*t/40) }},
 	{28, "FBPS", func(t float64) float64 { return math.Max(0, (-60*pedal(t)-20)*14) }},
 	{29, "RBPS", func(t float64) float64 { return math.Max(0, (-60*pedal(t)-20)*8) }},
-	{36, "RadTemp", func(t float64) float64 { return 1400 - 500*math.Exp(-t/120) }}, // raw ADC
+	{36, "RadTemp", func(t float64) float64 { return 1400 - 500*math.Exp(-t/120) }},
 	{40, "StrAngle", steer},
 	{52, "TPS1", func(t float64) float64 { return math.Max(0, math.Min(100, 50+60*pedal(t))) }},
 	{55, "Gear", func(t float64) float64 { return math.Min(5, math.Max(1, math.Floor(speed(t)/12))) }},
@@ -87,7 +74,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Discovery responder.
 	go func() {
 		conn, err := net.ListenPacket("udp4", net.JoinHostPort("", strconv.Itoa(*discPort)))
 		if err != nil {
@@ -115,7 +101,6 @@ func main() {
 		}
 	}()
 
-	// Command server, one command per connection like the firmware.
 	go func() {
 		l, err := net.Listen("tcp4", net.JoinHostPort("", strconv.Itoa(*cmdPort)))
 		if err != nil {

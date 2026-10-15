@@ -16,10 +16,6 @@ export function level(v: number | undefined, m: ChannelMeta | undefined): Level 
   return 'ok'
 }
 
-/**
- * Border colour for a value of the given age in seconds: green when fresh,
- * easing to red at 10 s, then dimming. Same curve as the old InfoBox widget.
- */
 export function ageColor(age: number | undefined): string {
   if (age === undefined) return '#3f3f46'
   const a = Math.max(0, age)

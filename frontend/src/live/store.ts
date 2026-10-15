@@ -2,13 +2,6 @@ import type { Row } from '../../bindings/dawg_viewer/internal/live/models'
 
 const INITIAL_CAPACITY = 4096
 
-/**
- * Column store for live rows. Every channel has one value per row: a row that
- * doesn't carry a channel repeats its previous value (the device only sends
- * what changed recently), and a channel's first value is copied back over the
- * rows before it so plots never see gaps. History is capped at `maxRows`; the
- * oldest quarter is dropped when it fills.
- */
 export class LiveStore {
   private cap = INITIAL_CAPACITY
   private time = new Float64Array(this.cap)
@@ -71,12 +64,10 @@ export class LiveStore {
     this.length -= drop
   }
 
-  /** Session time of every row, oldest first. The view is only valid until the next append. */
   times(): Float64Array {
     return this.time.subarray(0, this.length)
   }
 
-  /** One value per row for `name`, or null if the channel hasn't been seen. */
   column(name: string): Float64Array | null {
     return this.cols.get(name)?.subarray(0, this.length) ?? null
   }
@@ -86,7 +77,6 @@ export class LiveStore {
     return col && this.length > 0 ? col[this.length - 1] : undefined
   }
 
-  /** Session time of the newest row that actually carried `name`. */
   lastUpdate(name: string): number | undefined {
     return this.updatedAt.get(name)
   }
