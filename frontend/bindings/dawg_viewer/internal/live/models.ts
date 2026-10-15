@@ -5,88 +5,41 @@
 // @ts-ignore: Unused imports
 import * as config$0 from "../config/models.js";
 
-/**
- * Channel describes a channel the session has seen.
- */
 export interface Channel {
     "name": string;
-
-    /**
-     * ID is the device's signal id, or -1 for channels computed by the app.
-     */
     "id": number;
     "meta": config$0.ChannelMeta;
 }
 
-/**
- * Frame is everything received since the previous frame.
- */
 export interface Frame {
     "rows": Row[] | null;
 }
 
-/**
- * IgnoredSender is a computer that sent data the session didn't accept.
- */
 export interface IgnoredSender {
     "addr": string;
     "packets": number;
 }
 
-/**
- * Row is every value carried by one telemetry packet.
- */
 export interface Row {
-    /**
-     * T is seconds since the session started, from this computer's clock.
-     */
     "t": number;
     "v": { [_ in string]?: number } | null;
 }
 
-/**
- * Status is a snapshot of the connection for the UI.
- */
 export interface Status {
     "profile": string;
     "profileName": string;
-
-    /**
-     * listening | receiving | stale | stopped | error
-     */
     "state": string;
     "listen": string;
     "deviceIp": string;
-
-    /**
-     * discovery | telemetry | config
-     */
     "deviceSource": string;
     "firmware": string;
     "packets": number;
     "packetRate": number;
-
-    /**
-     * LastPacketMs is the age of the newest packet, or -1 before the first.
-     */
     "lastPacketMs": number;
     "badPackets": number;
     "unknownIds": number[] | null;
-
-    /**
-     * Filtering is true when only the profile's device is accepted; until it
-     * is found, nothing is.
-     */
     "filtering": boolean;
-
-    /**
-     * Ignored lists other senders whose data was dropped.
-     */
     "ignored": IgnoredSender[] | null;
     "error": string;
-
-    /**
-     * StartedAt is the session start as Unix milliseconds; Row.T counts from it.
-     */
     "startedAt": number;
 }

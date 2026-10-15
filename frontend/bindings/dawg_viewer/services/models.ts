@@ -5,9 +5,6 @@
 // @ts-ignore: Unused imports
 import * as config$0 from "../internal/config/models.js";
 
-/**
- * Info describes the configuration the app is running with.
- */
 export interface Info {
     "configDir": config$0.Dir;
     "settings": config$0.Settings;
@@ -18,9 +15,6 @@ export interface Info {
     "settingsError": string;
 }
 
-/**
- * ProfileSummary is a device profile as listed in the UI.
- */
 export interface ProfileSummary {
     "id": string;
     "name": string;
