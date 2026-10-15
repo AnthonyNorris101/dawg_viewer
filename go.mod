@@ -2,7 +2,10 @@ module dawg_viewer
 
 go 1.25.0
 
-require github.com/wailsapp/wails/v3 v3.0.0-beta.29
+require (
+	github.com/wailsapp/wails/v3 v3.0.0-beta.29
+	go.yaml.in/yaml/v3 v3.0.5
+)
 
 require (
 	github.com/adrg/xdg v0.5.3 // indirect

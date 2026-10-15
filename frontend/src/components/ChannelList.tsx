@@ -1,9 +1,12 @@
 import { memo, useMemo, useState, type Dispatch } from 'react'
 import type { Channel } from '../data/session'
+
+/** What the list needs to show a channel. */
+export type ListChannel = Pick<Channel, 'id' | 'name' | 'group' | 'unit' | 'color'>
 import type { LayoutAction } from '../state/layout'
 
 interface Props {
-  channels: Channel[]
+  channels: ListChannel[]
   /** Channels shown in the active plot. */
   selectedIds: string[]
   dispatch: Dispatch<LayoutAction>
@@ -14,7 +17,7 @@ export const ChannelList = memo(function ChannelList({ channels, selectedIds, di
 
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase()
-    const out = new Map<string, Channel[]>()
+    const out = new Map<string, ListChannel[]>()
     for (const ch of channels) {
       if (q && !ch.name.toLowerCase().includes(q) && !ch.group.toLowerCase().includes(q)) continue
       const list = out.get(ch.group)

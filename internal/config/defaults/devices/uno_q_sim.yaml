@@ -1,0 +1,39 @@
+# Arduino UNO Q, used to test the app with simulated data and, later, to relay
+# data from the car over a long-range 2.4 GHz link.
+#
+# To be read by the app the board must speak the same protocol as the ILTM:
+#   - send ITV telemetry (float32 values, id 0 = sender clock in ms) by UDP to
+#     this computer on the "listen" port below;
+#   - send a name packet (type 0x00 fields) at start-up and every few seconds;
+#   - optionally answer the discovery request with
+#     {"type":"UGAMS_DATA","id":"<device_id>","port":5000,"firmware":"x.y.z"}
+#     to the sender's address and port;
+#   - optionally accept the name-sync command on the commands port.
+# See docs/device-protocol.md in the app's source for the byte layout.
+
+id: uno-q-sim
+name: Arduino UNO Q (simulator)
+
+# Leave empty to rely on discovery or the address telemetry comes from.
+address: ""
+
+telemetry:
+  listen: 0.0.0.0:5002
+
+discovery:
+  enabled: true
+  port: 4999
+  request: UGAMS_DISCOVER
+  device_id: UNOQ-SIM
+
+commands:
+  port: 2002
+  pad_to: 0
+  name_sync: Name_Sync_Req
+  list:
+    Name_Sync_Req: { id: 3, data: 0 }
+
+channels:
+  RPM:  { label: RPM,   precision: 0, pinned: true, large: true, order: 0 }
+  VSS:  { label: Speed, precision: 1, pinned: true, large: true, order: 1 }
+  Gear: { label: Gear,  precision: 0, pinned: true, order: 2 }

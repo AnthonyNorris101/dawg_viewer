@@ -2,43 +2,24 @@ package main
 
 import (
 	"embed"
-
 	"log"
-	"time"
+	"os"
+	"strings"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
-)
 
-// Wails uses Go's `embed` package to embed the frontend files into the binary.
-// Any files in the frontend/dist folder will be embedded into the binary and
-// made available to the frontend.
-// See https://pkg.go.dev/embed for more information.
+	"dawg_viewer/services"
+)
 
 //go:embed all:frontend/dist
 var assets embed.FS
 
-func init() {
-	// Register a custom event whose associated data type is string.
-	// This is not required, but the binding generator will pick up registered events
-	// and provide a strongly typed JS/TS API for them.
-	application.RegisterEvent[string]("time")
-}
-
-// main function serves as the application's entry point. It initializes the application, creates a window,
-// and starts a goroutine that emits a time-based event every second. It subsequently runs the application and
-// logs any error that might occur.
 func main() {
-
-	// Create a new Wails application by providing the necessary options.
-	// Variables 'Name' and 'Description' are for application metadata.
-	// 'Assets' configures the asset server with the 'FS' variable pointing to the frontend files.
-	// 'Bind' is a list of Go struct instances. The frontend has access to the methods of these instances.
-	// 'Mac' options tailor the application when running an macOS.
 	app := application.New(application.Options{
 		Name:        "Dawg Viewer",
 		Description: "FSAE data acquisition viewer",
 		Services: []application.Service{
-			application.NewService(&GreetService{}),
+			application.NewService(services.NewLiveService(configFlag(os.Args[1:]))),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -48,34 +29,31 @@ func main() {
 		},
 	})
 
-	// Create a new window with the necessary options.
-	// 'Title' is the title of the window.
-	// 'Mac' options tailor the window when running on macOS.
-	// 'BackgroundColour' is the background colour of the window.
-	// 'URL' is the URL that will be loaded into the webview.
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title: "Dawg Viewer",
-		Width:  1280,
-		Height: 800,
+		Title:            "Dawg Viewer",
+		Width:            1280,
+		Height:           800,
 		BackgroundColour: application.NewRGB(9, 9, 11),
 		URL:              "/",
 	})
 
-	// Create a goroutine that emits an event containing the current time every second.
-	// The frontend can listen to this event and update the UI accordingly.
-	go func() {
-		for {
-			now := time.Now().Format(time.RFC1123)
-			app.Event.Emit("time", now)
-			time.Sleep(time.Second)
-		}
-	}()
-
-	// Run the application. This blocks until the application has been exited.
-	err := app.Run()
-
-	// If an error occurred while running the application, log it and exit.
-	if err != nil {
+	if err := app.Run(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// configFlag finds "--config <dir>" or "--config=<dir>". It's parsed by hand
+// because the OS can pass extra arguments to GUI apps (e.g. -psn_ on macOS).
+func configFlag(args []string) string {
+	for i, a := range args {
+		for _, name := range []string{"--config", "-config"} {
+			if a == name && i+1 < len(args) {
+				return args[i+1]
+			}
+			if v, ok := strings.CutPrefix(a, name+"="); ok {
+				return v
+			}
+		}
+	}
+	return ""
 }

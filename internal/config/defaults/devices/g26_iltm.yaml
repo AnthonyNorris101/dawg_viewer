@@ -1,0 +1,92 @@
+# G26 ILTM data logger (ESP32), reached over WiFi through a nearby router.
+# Matches Firmware/ILTM_Module. Copy this file to add another car or logger.
+
+id: g26-iltm
+name: G26 ILTM (ESP32)
+
+# The logger's IP address. Optional: discovery finds it automatically, and the
+# app also learns it from incoming telemetry. Used only if both of those fail.
+address: 192.168.0.2
+
+telemetry:
+  # UDP address the app listens on. The logger sends ITV telemetry to port
+  # "udpPort" from its own config.json (5002 by default).
+  listen: 0.0.0.0:5002
+
+discovery:
+  # The app broadcasts the request; the logger answers with its id and then
+  # sends telemetry straight to this computer instead of broadcasting it.
+  enabled: true
+  port: 4999
+  request: UGAMS_DISCOVER
+  device_id: G26-ILTM
+
+commands:
+  # The logger accepts one command per TCP connection on this port.
+  port: 2002
+  # The firmware waits for 256 bytes (or 1 s) before acting on a command, which
+  # pauses its WiFi telemetry. Zero-padding commands to 256 bytes avoids the
+  # wait. Set to 0 to send unpadded commands like the old Python app.
+  pad_to: 256
+  # Command sent when telemetry arrives with signal ids the app has no name for.
+  name_sync: Name_Sync_Req
+  list:
+    Name_Sync_Req:              { id: 3,  data: 0 }
+    Enable_Logging:             { id: 4,  data: 1 }
+    Disable_Logging:            { id: 4,  data: 0 }
+    Enable_RS232:               { id: 5,  data: 1 }
+    Disable_RS232:              { id: 5,  data: 0 }
+    Enable_FileServer:          { id: 6,  data: 1 }
+    Disable_FileServer:         { id: 6,  data: 0 }
+    Disable_PTT:                { id: 8,  data: 0 }
+    Enable_PTT:                 { id: 8,  data: 1 }
+    PTT_Force_On:               { id: 8,  data: 2 }
+    Set_State_Driving:          { id: 10, data: 0 }
+    Set_State_PitLane:          { id: 10, data: 1 }
+    Set_State_DownLoadFiles:    { id: 10, data: 2 }
+    Set_State_Driving-LoraOnly: { id: 10, data: 3 }
+    Set_State_EcuTuning:        { id: 10, data: 4 }
+    Enable_NTP:                 { id: 11, data: 1 }
+    Disable_NTP:                { id: 11, data: 0 }
+
+# Rename signals by id. The firmware names ids 111, 113 and 115 all
+# "PosLat_L"; these are the low halves of latitude, longitude and altitude.
+rename:
+  111: PosLat_L
+  113: PosLong_L
+  115: PosAlt_L
+
+# Rebuild full-precision values that the firmware splits into two floats.
+combine:
+  - { name: PosLat,  hi: PosLat_H,  lo: PosLat_L }
+  - { name: PosLong, hi: PosLong_H, lo: PosLong_L }
+  - { name: PosAlt,  hi: PosAlt_H,  lo: PosAlt_L }
+
+# Convert raw readings on this computer. Types:
+#   linear:      value * mult / div + add
+#   steinhart_f: thermistor ADC counts to °F, fitted through three points
+calibrations:
+  RadTemp:
+    type: steinhart_f
+    points: [[336, 266], [999, 176], [2924, 68]]
+    r_fixed: 1000
+    adc_max: 4095
+
+# How channels are shown. Pinned channels get a card at the top of the live
+# view, in "order". Optional: label, unit, precision, large, and the
+# warn_min/warn_max/crit_min/crit_max thresholds that colour a card.
+channels:
+  RPM:      { label: RPM,           precision: 0, pinned: true, large: true, order: 0 }
+  VSS:      { label: Speed,         precision: 1, pinned: true, large: true, order: 1 }
+  Gear:     { label: Gear,          precision: 0, pinned: true, order: 2 }
+  CLT1:     { label: Coolant Temp,  precision: 1, pinned: true, order: 3 }
+  RadTemp:  { label: Radiator Temp, precision: 1, unit: °F, pinned: true, order: 4 }
+  OilTemp:  { label: Oil Temp,      precision: 1, pinned: true, order: 5 }
+  OilPres:  { label: Oil Pressure,  precision: 1, pinned: true, order: 6 }
+  AFR:      { label: AFR,           precision: 1, pinned: true, order: 7 }
+  TPS1:     { label: Throttle,      precision: 1, pinned: true, order: 10 }
+  FBPS:     { label: Brake Front,   precision: 0, pinned: true, order: 11 }
+  RBPS:     { label: Brake Rear,    precision: 0, order: 12 }
+  BatV:     { label: Battery,       precision: 1, unit: V, order: 13 }
+  RX_INT:   { label: RX Interval,   precision: 0, unit: ms, order: 20 }
+  TX_INT:   { label: TX Interval,   precision: 0, unit: ms, order: 21 }

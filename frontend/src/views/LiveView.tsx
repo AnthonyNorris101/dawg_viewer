@@ -1,0 +1,108 @@
+import { useEffect, useMemo, useReducer } from 'react'
+import type { ChannelMeta } from '../../bindings/dawg_viewer/internal/config/models'
+import { ChannelList, type ListChannel } from '../components/ChannelList'
+import { colorFor, startLive, useChannels, useInfo } from '../live/connection'
+import { LivePlotPanel } from '../live/LivePlotPanel'
+import { PinnedCards } from '../live/PinnedCards'
+import { StatusHeader } from '../live/StatusHeader'
+import { liveSync, resumeFollow, showWindow, useFollow } from '../live/follow'
+import { layoutReducer, makeLayout } from '../state/layout'
+import { toolbarButton, toolbarButtonActive } from '../ui'
+
+const initialLayout = makeLayout([
+  ['RPM', 'TPS1'],
+  ['CLT1', 'OilTemp', 'RadTemp'],
+  ['AccelX', 'AccelY'],
+])
+
+const WINDOWS: [number, string][] = [
+  [10, '10 s'],
+  [30, '30 s'],
+  [60, '1 min'],
+  [300, '5 min'],
+  [Infinity, 'All'],
+]
+
+const NO_CHANNELS: string[] = []
+const NO_METAS: Record<string, ChannelMeta | undefined> = {}
+
+export function LiveView() {
+  useEffect(startLive, [])
+  const info = useInfo()
+  const channels = useChannels()
+  const metas = info?.channels ?? NO_METAS
+  const [layout, dispatch] = useReducer(layoutReducer, initialLayout)
+  const activePanel = layout.panels.find((p) => p.id === layout.activeId)
+
+  const { follow, windowS } = useFollow()
+
+  const known = useMemo(() => new Set(channels.map((c) => c.name)), [channels])
+  const listChannels = useMemo<ListChannel[]>(
+    () =>
+      channels.map((c) => ({
+        id: c.name,
+        name: metas[c.name]?.label ? `${metas[c.name]?.label} (${c.name})` : c.name,
+        group: c.id >= 0 ? 'From device' : 'Computed',
+        unit: metas[c.name]?.unit ?? '',
+        color: colorFor(c.name),
+      })),
+    [channels, metas],
+  )
+
+  return (
+    <div className="flex h-full flex-col">
+      <StatusHeader />
+      <div className="flex min-h-0 flex-1">
+        <ChannelList
+          channels={listChannels}
+          selectedIds={activePanel?.channelIds ?? NO_CHANNELS}
+          dispatch={dispatch}
+        />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <PinnedCards metas={metas} />
+          <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-1.5">
+            {WINDOWS.map(([s, label]) => (
+              <button
+                key={label}
+                type="button"
+                className={windowS === s ? toolbarButtonActive : toolbarButton}
+                onClick={() => showWindow(s)}
+              >
+                {label}
+              </button>
+            ))}
+            <button
+              type="button"
+              className={follow ? toolbarButtonActive : toolbarButton}
+              title="Keep the plots on the newest data"
+              onClick={resumeFollow}
+            >
+              {follow ? '● Live' : 'Resume live'}
+            </button>
+            <button
+              type="button"
+              className={`${toolbarButton} ml-auto`}
+              onClick={() => dispatch({ type: 'addPanel' })}
+            >
+              Add plot
+            </button>
+          </div>
+          <main className="flex min-h-0 flex-1 flex-col gap-px overflow-y-auto bg-zinc-800">
+            {layout.panels.map((panel, i) => (
+              <LivePlotPanel
+                key={panel.id}
+                panel={panel}
+                index={i}
+                active={panel.id === layout.activeId}
+                known={known}
+                metas={metas}
+                sync={liveSync}
+                dispatch={dispatch}
+              />
+            ))}
+          </main>
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -1,6 +1,5 @@
 import uPlot from 'uplot'
-import type { Channel } from '../data/session'
-import { CURSOR_SYNC_KEY, publishCursor, publishRange, registerPlot } from './sync'
+import type { ViewSync } from './sync'
 
 const FONT = '11px Inter, system-ui, sans-serif'
 const AXIS_STROKE = '#a1a1aa'
@@ -12,8 +11,32 @@ const PAN_STEP = 0.1
 const Y_AXIS_SIZE = 52
 const Y_LABEL_SIZE = 16
 
+export interface PlotSeries {
+  name: string
+  unit: string
+  color: string
+}
+
+export interface PlotOptions {
+  series: PlotSeries[]
+  /** [time, ...one array per series], all the same length. */
+  data: uPlot.AlignedData
+  sync: ViewSync
+  /** Current data extent; wheel zoom and pan stay inside it. */
+  bounds: () => [number, number] | null
+  /** Narrowest x span the wheel can zoom to. */
+  minSpan: number
+  /** Sample index under the cursor, null when the pointer leaves. */
+  onCursor: (idx: number | null) => void
+}
+
+export interface MountedPlot {
+  u: uPlot
+  destroy(): void
+}
+
 // Wheel zooms about the pointer; shift+wheel (or a horizontal wheel) pans.
-function wheelZoom(xMin: number, xMax: number, minSpan: number): uPlot.Plugin {
+function wheelZoom(bounds: PlotOptions['bounds'], minSpan: number): uPlot.Plugin {
   return {
     hooks: {
       ready(u) {
@@ -22,7 +45,9 @@ function wheelZoom(xMin: number, xMax: number, minSpan: number): uPlot.Plugin {
           (e) => {
             e.preventDefault()
             const { min, max } = u.scales.x
-            if (min == null || max == null) return
+            const b = bounds()
+            if (min == null || max == null || !b) return
+            const [xMin, xMax] = b
             const span = max - min
             let nMin: number
             let nMax: number
@@ -49,81 +74,72 @@ function wheelZoom(xMin: number, xMax: number, minSpan: number): uPlot.Plugin {
 }
 
 function clampShift(shift: number, min: number, max: number, xMin: number, xMax: number) {
-  if (min + shift < xMin) return xMin - min
-  if (max + shift > xMax) return xMax - max
+  if (min + shift < xMin) return Math.min(0, xMin - min)
+  if (max + shift > xMax) return Math.max(0, xMax - max)
   return shift
 }
 
-/**
- * Draws `channels` against `time` inside `host` and keeps the plot sized to it.
- * Returns a dispose function. `onCursor` receives the sample index under the
- * cursor (null when the pointer leaves) for every synced cursor move.
- */
-export function mountPlot(
-  host: HTMLElement,
-  time: Float64Array,
-  channels: Channel[],
-  onCursor: (idx: number | null) => void,
-): () => void {
+/** Draws the series inside `host` and keeps the plot sized to it. */
+export function mountPlot(host: HTMLElement, opts: PlotOptions): MountedPlot {
+  const { series, sync } = opts
   // One y scale per unit so channels with unrelated magnitudes stay readable.
-  const units = [...new Set(channels.map((ch) => ch.unit))]
-  const xMin = time[0]
-  const xMax = time[time.length - 1]
-  const minSpan = (time[1] - time[0]) * 10
+  const units = [...new Set(series.map((s) => s.unit))]
 
-  const opts: uPlot.Options = {
-    width: host.clientWidth,
-    height: host.clientHeight,
-    legend: { show: false },
-    padding: [null, units.length > 1 ? 0 : Y_AXIS_SIZE + Y_LABEL_SIZE, null, null],
-    scales: { x: { time: false } },
-    cursor: {
-      sync: { key: CURSOR_SYNC_KEY, scales: ['x', null] },
-      drag: { x: true, y: false },
-      points: { size: 6 },
-    },
-    series: [
-      {},
-      ...channels.map((ch) => ({
-        label: ch.name,
-        scale: ch.unit,
-        stroke: ch.color,
-        width: 1.25,
-        points: { show: false },
-      })),
-    ],
-    axes: [
-      { stroke: AXIS_STROKE, grid: GRID, ticks: TICKS, font: FONT, size: 28 },
-      ...units.map((unit, i) => ({
-        scale: unit,
-        // Only the first two units get an axis; the rest would shift the plot area.
-        show: i < 2,
-        side: i === 0 ? 3 : 1,
-        label: unit,
-        labelSize: Y_LABEL_SIZE,
-        labelFont: FONT,
-        stroke: AXIS_STROKE,
-        grid: i === 0 ? GRID : { show: false },
-        ticks: TICKS,
-        font: FONT,
-        size: Y_AXIS_SIZE,
-      })),
-    ],
-    plugins: [wheelZoom(xMin, xMax, minSpan)],
-    hooks: {
-      setScale: [(u, key) => key === 'x' && publishRange(u)],
-      setCursor: [
-        (u) => {
-          const idx = u.cursor.idx ?? null
-          onCursor(idx)
-          publishCursor(idx)
-        },
+  const u = new uPlot(
+    {
+      width: host.clientWidth,
+      height: host.clientHeight,
+      legend: { show: false },
+      padding: [null, units.length > 1 ? 0 : Y_AXIS_SIZE + Y_LABEL_SIZE, null, null],
+      scales: { x: { time: false } },
+      cursor: {
+        sync: { key: sync.cursorKey, scales: ['x', null] },
+        drag: { x: true, y: false },
+        points: { size: 6 },
+      },
+      series: [
+        {},
+        ...series.map((s) => ({
+          label: s.name,
+          scale: s.unit,
+          stroke: s.color,
+          width: 1.25,
+          points: { show: false },
+        })),
       ],
+      axes: [
+        { stroke: AXIS_STROKE, grid: GRID, ticks: TICKS, font: FONT, size: 28 },
+        ...units.map((unit, i) => ({
+          scale: unit,
+          // Only the first two units get an axis; the rest would shift the plot area.
+          show: i < 2,
+          side: i === 0 ? 3 : 1,
+          label: unit,
+          labelSize: Y_LABEL_SIZE,
+          labelFont: FONT,
+          stroke: AXIS_STROKE,
+          grid: i === 0 ? GRID : { show: false },
+          ticks: TICKS,
+          font: FONT,
+          size: Y_AXIS_SIZE,
+        })),
+      ],
+      plugins: [wheelZoom(opts.bounds, opts.minSpan)],
+      hooks: {
+        setScale: [(u, key) => key === 'x' && sync.publishRange(u)],
+        setCursor: [
+          (u) => {
+            const idx = u.cursor.idx ?? null
+            opts.onCursor(idx)
+            sync.publishCursor(idx)
+          },
+        ],
+      },
     },
-  }
-
-  const u = new uPlot(opts, [time, ...channels.map((ch) => ch.data)], host)
-  const unregister = registerPlot(u)
+    opts.data,
+    host,
+  )
+  const unregister = sync.register(u)
 
   const resize = new ResizeObserver(() => {
     const { clientWidth: width, clientHeight: height } = host
@@ -131,9 +147,12 @@ export function mountPlot(
   })
   resize.observe(host)
 
-  return () => {
-    resize.disconnect()
-    unregister()
-    u.destroy()
+  return {
+    u,
+    destroy() {
+      resize.disconnect()
+      unregister()
+      u.destroy()
+    },
   }
 }

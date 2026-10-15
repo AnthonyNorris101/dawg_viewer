@@ -1,0 +1,18 @@
+# Dawg Viewer settings.
+# Edit freely with any text editor; the app reads this file when it starts.
+# Paths can be absolute or relative to this folder.
+
+# Device profile to connect to on start: the "id" of a file in devices/.
+device: g26-iltm
+
+# Live view refresh rate, in frames per second.
+frame_rate: 20
+
+# How many minutes of live data to keep in memory for plots.
+history_minutes: 30
+
+# A channel with no new value for this many seconds is shown as stale.
+stale_after_s: 2
+
+# Folder where downloaded and converted logs are saved.
+logs_dir: logs

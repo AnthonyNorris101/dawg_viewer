@@ -1,27 +1,33 @@
 import { memo, useEffect, useRef } from 'react'
 import type { Session } from '../data/session'
-import { onCursor, onRange } from '../plot/sync'
+import type { ViewSync } from '../plot/sync'
 
 const seconds = (v: number) => `${v.toFixed(3)} s`
 
-export const StatusBar = memo(function StatusBar({ session }: { session: Session }) {
+export const StatusBar = memo(function StatusBar({
+  session,
+  sync,
+}: {
+  session: Session
+  sync: ViewSync
+}) {
   const cursorEl = useRef<HTMLSpanElement>(null)
   const rangeEl = useRef<HTMLSpanElement>(null)
   const { time } = session
 
   // Updated by direct DOM writes: these change on every pointer move.
   useEffect(() => {
-    const offCursor = onCursor((idx) => {
+    const offCursor = sync.onCursor((idx) => {
       if (cursorEl.current) cursorEl.current.textContent = idx == null ? '–' : seconds(time[idx])
     })
-    const offRange = onRange(({ min, max }) => {
+    const offRange = sync.onRange(({ min, max }) => {
       if (rangeEl.current) rangeEl.current.textContent = `${seconds(min)} → ${seconds(max)}`
     })
     return () => {
       offCursor()
       offRange()
     }
-  }, [time])
+  }, [time, sync])
 
   return (
     <footer className="flex items-center gap-6 border-t border-zinc-800 px-3 py-1 text-xs text-zinc-500 tabular-nums">

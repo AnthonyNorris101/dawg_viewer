@@ -16,14 +16,13 @@ export type LayoutAction =
   | { type: 'removePanel'; panelId: number }
   | { type: 'setActive'; panelId: number }
 
-export const initialLayout: Layout = {
-  panels: [
-    { id: 1, channelIds: ['rpm', 'tps'] },
-    { id: 2, channelIds: ['ws_fl', 'ws_fr', 'ws_rl', 'ws_rr'] },
-    { id: 3, channelIds: ['acc_x', 'acc_y'] },
-  ],
-  activeId: 1,
-  nextId: 4,
+/** A layout with one plot per entry of `panels`, the first one active. */
+export function makeLayout(panels: string[][]): Layout {
+  return {
+    panels: panels.map((channelIds, i) => ({ id: i + 1, channelIds })),
+    activeId: 1,
+    nextId: panels.length + 1,
+  }
 }
 
 // Untouched panels keep their object identity so memoized plots don't rebuild.

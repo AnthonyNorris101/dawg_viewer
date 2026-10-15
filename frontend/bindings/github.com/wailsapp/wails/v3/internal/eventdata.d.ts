@@ -5,10 +5,16 @@
 // @ts-ignore: Unused imports
 import type { Events } from "@wailsio/runtime";
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import type * as live$0 from "../../../../../dawg_viewer/internal/live/models.js";
+
 declare module "@wailsio/runtime" {
     namespace Events {
         interface CustomEvents {
-            "time": string;
+            "live:channels": live$0.Channel[] | null;
+            "live:frame": live$0.Frame;
+            "live:status": live$0.Status;
         }
     }
 }

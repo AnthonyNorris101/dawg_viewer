@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef, type Dispatch } from 'react'
 import type { Session } from '../data/session'
 import { mountPlot } from '../plot/mountPlot'
+import type { ViewSync } from '../plot/sync'
 import type { LayoutAction, Panel } from '../state/layout'
 
 interface Props {
@@ -8,6 +9,7 @@ interface Props {
   index: number
   active: boolean
   session: Session
+  sync: ViewSync
   dispatch: Dispatch<LayoutAction>
 }
 
@@ -18,6 +20,7 @@ export const PlotPanel = memo(function PlotPanel({
   index,
   active,
   session,
+  sync,
   dispatch,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -32,13 +35,22 @@ export const PlotPanel = memo(function PlotPanel({
   useEffect(() => {
     const host = hostRef.current
     if (!host || channels.length === 0) return
-    return mountPlot(host, session.time, channels, (idx) => {
-      for (const ch of channels) {
-        const el = valueEls.current.get(ch.id)
-        if (el) el.textContent = idx == null ? NO_VALUE : ch.data[idx].toFixed(ch.precision)
-      }
+    const { time } = session
+    const plot = mountPlot(host, {
+      series: channels,
+      data: [time, ...channels.map((ch) => ch.data)],
+      sync,
+      bounds: () => [time[0], time[time.length - 1]],
+      minSpan: (time[1] - time[0]) * 10,
+      onCursor: (idx) => {
+        for (const ch of channels) {
+          const el = valueEls.current.get(ch.id)
+          if (el) el.textContent = idx == null ? NO_VALUE : ch.data[idx].toFixed(ch.precision)
+        }
+      },
     })
-  }, [channels, session])
+    return plot.destroy
+  }, [channels, session, sync])
 
   return (
     <section

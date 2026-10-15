@@ -1,73 +1,46 @@
-import { useReducer } from 'react'
-import { ChannelList } from './components/ChannelList'
-import { PlotPanel } from './components/PlotPanel'
-import { StatusBar } from './components/StatusBar'
-import { createDemoSession } from './data/demo'
-import { setRange } from './plot/sync'
-import { initialLayout, layoutReducer } from './state/layout'
+import { useState } from 'react'
+import { LiveView } from './views/LiveView'
+import { ViewerView } from './views/ViewerView'
 
-// Placeholder until log files are loaded through the Go backend.
-const session = createDemoSession()
+type Tab = 'live' | 'logs' | 'viewer'
 
-const NO_CHANNELS: string[] = []
-const toolbarButton =
-  'rounded border border-zinc-700 px-2.5 py-1 text-xs text-zinc-200 hover:bg-zinc-800 disabled:text-zinc-600 disabled:hover:bg-transparent'
+const TABS: { id: Tab; label: string; disabled?: string }[] = [
+  { id: 'live', label: 'Live' },
+  { id: 'logs', label: 'Logs', disabled: 'The log browser is the next step' },
+  { id: 'viewer', label: 'Viewer' },
+]
 
 function App() {
-  const [layout, dispatch] = useReducer(layoutReducer, initialLayout)
-  const activePanel = layout.panels.find((p) => p.id === layout.activeId)
-
-  const resetZoom = () => {
-    const { time } = session
-    setRange({ min: time[0], max: time[time.length - 1] })
-  }
+  const [tab, setTab] = useState<Tab>('live')
 
   return (
     <div className="flex h-full flex-col select-none">
-      <header className="flex items-center gap-2 border-b border-zinc-800 px-3 py-1.5">
-        <h1 className="mr-2 text-sm font-semibold tracking-tight">Dawg Viewer</h1>
-        <button
-          type="button"
-          className={toolbarButton}
-          disabled
-          title="Log loading is not wired up yet"
-        >
-          Open log…
-        </button>
-        <button
-          type="button"
-          className={toolbarButton}
-          onClick={() => dispatch({ type: 'addPanel' })}
-        >
-          Add plot
-        </button>
-        <button type="button" className={toolbarButton} onClick={resetZoom}>
-          Reset zoom
-        </button>
-        <span className="ml-auto truncate text-xs text-zinc-500">{session.name}</span>
-      </header>
-
-      <div className="flex min-h-0 flex-1">
-        <ChannelList
-          channels={session.channels}
-          selectedIds={activePanel?.channelIds ?? NO_CHANNELS}
-          dispatch={dispatch}
-        />
-        <main className="flex min-w-0 flex-1 flex-col gap-px overflow-y-auto bg-zinc-800">
-          {layout.panels.map((panel, i) => (
-            <PlotPanel
-              key={panel.id}
-              panel={panel}
-              index={i}
-              active={panel.id === layout.activeId}
-              session={session}
-              dispatch={dispatch}
-            />
-          ))}
-        </main>
+      <nav className="flex items-center gap-1 border-b border-zinc-800 px-3">
+        <h1 className="mr-4 text-sm font-semibold tracking-tight">Dawg Viewer</h1>
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            disabled={!!t.disabled}
+            title={t.disabled}
+            onClick={() => setTab(t.id)}
+            className={`border-b-2 px-3 py-2 text-sm ${
+              tab === t.id
+                ? 'border-red-500 text-zinc-100'
+                : 'border-transparent text-zinc-400 hover:text-zinc-200 disabled:text-zinc-700'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </nav>
+      {/* Views stay mounted so live data and plot layouts survive tab switches. */}
+      <div className={`min-h-0 flex-1 ${tab === 'live' ? '' : 'hidden'}`}>
+        <LiveView />
       </div>
-
-      <StatusBar session={session} />
+      <div className={`min-h-0 flex-1 ${tab === 'viewer' ? '' : 'hidden'}`}>
+        <ViewerView />
+      </div>
     </div>
   )
 }
