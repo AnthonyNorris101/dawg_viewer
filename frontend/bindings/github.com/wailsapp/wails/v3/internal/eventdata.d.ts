@@ -8,6 +8,9 @@ import type { Events } from "@wailsio/runtime";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import type * as live$0 from "../../../../../dawg_viewer/internal/live/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import type * as services$0 from "../../../../../dawg_viewer/services/models.js";
 
 declare module "@wailsio/runtime" {
     namespace Events {
@@ -15,6 +18,7 @@ declare module "@wailsio/runtime" {
             "live:channels": live$0.Channel[] | null;
             "live:frame": live$0.Frame;
             "live:status": live$0.Status;
+            "logs:progress": services$0.LogProgress;
         }
     }
 }

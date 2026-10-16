@@ -15,8 +15,46 @@ export interface Info {
     "settingsError": string;
 }
 
+export interface LocalLog {
+    "name": string;
+    "path": string;
+    "kind": string;
+    "size": number;
+    "modified": number;
+}
+
+export interface LogProgress {
+    "file": string;
+    "index": number;
+    "count": number;
+    "stage": string;
+    "done": number;
+    "total": number;
+    "message": string;
+}
+
 export interface ProfileSummary {
     "id": string;
     "name": string;
     "file": string;
+}
+
+export interface RemoteLog {
+    "name": string;
+    "number": number;
+    "date": string;
+    "downloaded": boolean;
+}
+
+export interface ViewerChannel {
+    "name": string;
+    "values": string | null;
+}
+
+export interface ViewerLog {
+    "name": string;
+    "path": string;
+    "rows": number;
+    "time": string | null;
+    "channels": ViewerChannel[] | null;
 }

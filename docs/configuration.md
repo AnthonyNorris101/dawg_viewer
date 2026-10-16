@@ -54,6 +54,7 @@ layout stay as they are.
 | `commands.pad_to` | zero-pad commands to this many bytes; see below |
 | `commands.name_sync` | which command asks the device to resend names |
 | `commands.list` | named commands: `{ id, data, description }` |
+| `fileserver` | the logger's HTTP file server: `port` (80), `logs_dir` (`/logs`), and the `enable`/`disable` command names. Leave it out for devices without one; the Logs tab then says there are no logs to download. |
 | `rename` | signal id → name, overriding what the device sends |
 | `combine` | `{ name, hi, lo }`: add two channels into one |
 | `calibrations` | channel name → `linear` (mult/div/add) or `steinhart_f` (3 points, r_fixed, adc_max) |
@@ -84,3 +85,26 @@ Python app.
 The firmware names ids 111, 113 and 115 all `PosLat_L`; they are the low
 halves of latitude, longitude and altitude. The `combine` entries then rebuild
 full-precision `PosLat`, `PosLong`, `PosAlt`.
+
+### Adding the file server to an existing config
+
+Config folders created before the Logs tab existed have no `fileserver`
+section, because existing files are never overwritten. Add this to
+`devices/g26_iltm.yaml` (or delete the `devices/` folder to get fresh
+defaults):
+
+```yaml
+fileserver:
+  port: 80
+  logs_dir: /logs
+  enable: Enable_FileServer
+  disable: Disable_FileServer
+```
+
+For `devices/uno_q_sim.yaml` use `port: 8080`, and add the two commands to
+`commands.list` if they aren't there:
+
+```yaml
+    Enable_FileServer:  { id: 6, data: 1 }
+    Disable_FileServer: { id: 6, data: 0 }
+```

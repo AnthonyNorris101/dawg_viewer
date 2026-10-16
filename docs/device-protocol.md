@@ -79,6 +79,41 @@ port **2002**, sends
 Answer by sending a name packet to the telemetry port. If the device doesn't
 implement this, the periodic name packets are enough.
 
+## 4. File server — optional, for the Logs tab
+
+Command 6 turns an HTTP server on (data 1) and off (data 0), sent the same way
+as the name-sync command. The app sends 6/1 when the Logs tab connects and 6/0
+when the tab closes or the app quits. The ILTM uses port 80; the UNO Q profile
+and `tools/uno_q_sim.py` use 8080, since ports below 1024 need root on Linux.
+
+| Request | Response |
+|---|---|
+| `GET /files?dir=/logs` | JSON array of file names in the logs folder, e.g. `["2026-10-16_12-00-00_data1.bin"]` |
+| `GET /download?name=logs/<file>` | the file's bytes, with `Content-Length` |
+
+- `.bin` files must use the SD-card log format below; the app converts them
+  to CSV after downloading. `.csv` files are saved as they are.
+- Name files `YYYY-MM-DD_HH-MM-SS_data<N>.<ext>` (UTC) so the app can show the
+  date and sort by `N`; other names still work.
+
+### SD-card log format (version 2)
+
+All little-endian.
+
+```
+header   u32 0xDEADBEEF, u8 version (2), u8 signal count,
+         then per signal: u8 id, u8 name length, name bytes
+frames   repeated: COBS-encoded block, then a 0x00 byte
+block    up to 56 entries of { u32 timestamp_ms, u8 id, f32 value }
+         followed by u32 CRC
+```
+
+The CRC is CRC-32 (polynomial 0xEDB88320) over the entry bytes with initial
+value 0 and no final XOR. In Python that's
+`zlib.crc32(data, 0xFFFFFFFF) ^ 0xFFFFFFFF`; in Go,
+`^crc32.Update(0xFFFFFFFF, crc32.IEEETable, data)`. A frame with a bad CRC is
+skipped. `tools/uno_q_sim.py` (`encode_log`) writes exactly this format.
+
 ## Relaying (UNO Q between the car and the pits)
 
 A relay can forward the car's UDP datagrams byte-for-byte; the app doesn't

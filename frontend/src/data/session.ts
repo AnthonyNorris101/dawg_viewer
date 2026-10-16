@@ -5,11 +5,12 @@ export interface Channel {
   unit: string
   color: string
   precision: number
-  data: Float32Array
+  data: Float64Array
 }
 
 export interface Session {
   name: string
+  path: string
   sampleRate: number
   time: Float64Array
   channels: Channel[]

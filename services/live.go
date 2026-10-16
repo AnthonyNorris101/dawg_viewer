@@ -4,12 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"dawg_viewer/internal/config"
+	"dawg_viewer/internal/itv"
+	"dawg_viewer/internal/link"
 	"dawg_viewer/internal/live"
 )
 
@@ -233,4 +237,50 @@ func emit(name string, data any) {
 	if app := application.Get(); app != nil {
 		app.Event.Emit(name, data)
 	}
+}
+
+type deviceTarget struct {
+	profile   config.Profile
+	addr      netip.Addr
+	configDir string
+	logsDir   string
+}
+
+func (s *LiveService) target() (deviceTarget, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active == nil {
+		return deviceTarget{}, errors.New("no device selected; pick one in the Live tab")
+	}
+	t := deviceTarget{
+		profile:   *s.active,
+		configDir: s.dir.Path,
+		logsDir:   config.ResolvePath(s.dir.Path, s.settings.LogsDir),
+	}
+	if s.session != nil {
+		t.addr, _ = netip.ParseAddr(s.session.Status().DeviceIP)
+	}
+	if !t.addr.IsValid() && s.active.Address != "" {
+		t.addr, _ = netip.ParseAddr(s.active.Address)
+	}
+	return t, nil
+}
+
+func (t deviceTarget) rename() map[uint8]string {
+	out := map[uint8]string{}
+	for id, name := range t.profile.Rename {
+		if id >= 0 && id <= 255 {
+			out[uint8(id)] = name
+		}
+	}
+	return out
+}
+
+func (t deviceTarget) sendCommand(ctx context.Context, name string) error {
+	cmd, ok := t.profile.Commands.List[name]
+	if !ok {
+		return fmt.Errorf("command %q isn't in %s", name, filepath.Base(t.profile.File))
+	}
+	payload := itv.AppendU8(itv.AppendCmd(nil, 1, cmd.ID), 2, cmd.Data)
+	return link.SendCommand(ctx, t.addr, t.profile.Commands.Port, payload, t.profile.Commands.PadTo)
 }

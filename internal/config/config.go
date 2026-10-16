@@ -175,6 +175,7 @@ type Profile struct {
 	Telemetry    Telemetry              `yaml:"telemetry" json:"telemetry"`
 	Discovery    Discovery              `yaml:"discovery" json:"discovery"`
 	Commands     Commands               `yaml:"commands" json:"commands"`
+	FileServer   *FileServer            `yaml:"fileserver" json:"fileServer"`
 	Rename       map[int]string         `yaml:"rename" json:"-"`
 	Combine      []Combine              `yaml:"combine" json:"-"`
 	Calibrations map[string]Calibration `yaml:"calibrations" json:"-"`
@@ -201,6 +202,13 @@ type Commands struct {
 	PadTo    int                `yaml:"pad_to" json:"padTo"`
 	NameSync string             `yaml:"name_sync" json:"nameSync"`
 	List     map[string]Command `yaml:"list" json:"list"`
+}
+
+type FileServer struct {
+	Port    int    `yaml:"port" json:"port"`
+	LogsDir string `yaml:"logs_dir" json:"logsDir"`
+	Enable  string `yaml:"enable" json:"enable"`
+	Disable string `yaml:"disable" json:"disable"`
 }
 
 type Command struct {
@@ -254,6 +262,14 @@ func (p *Profile) applyDefaults() {
 	}
 	if p.Commands.Port == 0 {
 		p.Commands.Port = 2002
+	}
+	if fs := p.FileServer; fs != nil {
+		if fs.Port == 0 {
+			fs.Port = 80
+		}
+		if fs.LogsDir == "" {
+			fs.LogsDir = "/logs"
+		}
 	}
 }
 

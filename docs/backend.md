@@ -9,6 +9,8 @@ internal/live    a session: packets → rows, status, frames
 internal/link    network I/O only
 internal/itv     the wire encoding
 internal/config  config folder, settings, device profiles, name cache
+internal/logfile SD-card .bin logs → CSV, 100 Hz tables, CSV loading
+internal/fileserver HTTP client for the logger's file server
 internal/calib   calibration maths
 cmd/iltm-sim     a fake logger for testing
 ```
@@ -31,6 +33,27 @@ names: `live:frame`, `live:status`, `live:channels`; they're registered with
 - `Connect` saves the chosen device in `settings.yaml`.
 - `Reload` re-reads all config and reconnects.
 - The `emitter` type forwards session output to Wails events.
+- `target()` gives other services the selected profile, the device's address
+  (from the live session, else the profile's `address`) and the logs folder.
+
+`LogService` backs the Logs tab and the Viewer tab:
+
+- `RemoteLogs` sends the profile's `fileserver.enable` command (once per
+  device), then lists `.bin` and `.csv` files. It retries the listing for a few seconds
+  because the logger's HTTP server takes a moment to start.
+- `Download` saves each file into `logs_dir`; for `.bin` files it runs
+  `logfile.Convert`, which writes the long CSV and the `_Normalized.csv`
+  (100 Hz). `.csv` files are kept as they are. Progress goes out as
+  `logs:progress` events.
+- `FinishRemote` sends `fileserver.disable`. While the file server is on the
+  firmware stops logging and disables CAN, so this is called when the Logs
+  tab closes and when the app shuts down.
+- `Load` reads a `.bin` or CSV with `logfile.Load` and returns the columns as
+  base64-encoded little-endian float64 arrays (`[]byte` in Go). That is about
+  half the size of JSON numbers and decodes in the browser with one `fetch`
+  of a `data:` URL; float64 keeps GPS values exact.
+- `LocalLogs`, `ConvertLocal`, `PickFile` (native file dialog),
+  `LogsFolder`, `OpenLogsFolder`.
 
 ## internal/itv
 
@@ -126,6 +149,56 @@ frame rate. The data model and goroutine layout are in
 - `Start` returns an error immediately if the port is busy. `Stop` waits
   until the port is free again.
 
+## internal/logfile
+
+Reads the ILTM's SD-card logs (`Firmware/ILTM_Module/DataLogger.h`, version 2)
+and turns them into CSVs and tables.
+
+- **Header:** `0xDEADBEEF`, version byte, signal count, then `[id][len][name]`
+  per signal. Only version 2 is read (what the current firmware writes); the
+  version 1 logs in the Archive aren't supported.
+- **Body:** COBS frames ending in `0x00`, each holding up to 56 nine-byte
+  entries (`u32 ms`, `u8 id`, `f32`) plus a CRC32 of the entry bytes. A frame
+  that fails COBS, length or CRC checks is skipped; the rest is still read.
+- **CRC:** the firmware feeds `esp_crc32_le` a seed of `0xFFFFFFFF` and XORs
+  the result with `0xFFFFFFFF`, which is CRC-32 with initial value 0 and no
+  final XOR: `^crc32.Update(0xFFFFFFFF, crc32.IEEETable, data)`. The Python
+  app XORed the standard CRC with a constant, which only matches full
+  56-entry blocks.
+- `WriteCSV` writes the long CSV the Python app made:
+  `timestamp_ms,id,signal,value`, 4 decimals, `UNKNOWN_<id>` for ids missing
+  from the header.
+- `Normalize` puts every signal on one time grid (10 ms at 100 Hz) from the
+  first to the last sample, interpolating linearly in time and holding the
+  first/last value at the edges. Columns are sorted by name. Two ids with the
+  same name become `Name_<id>`. Where several samples share a timestamp the
+  last one wins. The Python version reindexed onto the grid and only kept
+  samples that fell exactly on a grid timestamp, then interpolated by row
+  position; this uses every sample and interpolates by time.
+- `Convert` decodes a `.bin`, applies the profile's `rename`, and writes
+  `<name>.csv` and `<name>_Normalized.csv` next to it (via temp files).
+- `Load` reads a log for the viewer: `.bin` (normalized), the long CSV
+  (normalized), or any wide CSV whose first column is time. Wide CSVs may use
+  commas or tabs, ISO timestamps, seconds or milliseconds (a header containing
+  "ms", or values above 1e11, are taken as milliseconds), and can have units
+  rows or text columns, which are skipped. Rows are sorted by time and gaps
+  in each column are filled forward then backward.
+- `Encode` writes a log in the firmware's format; the tests and the
+  simulator use it.
+
+Tests build frames with a literal port of the firmware's COBS and CRC code
+and check `Encode` produces the same bytes, plus normalization, `Convert`,
+and each CSV layout found in the Archive.
+
+## internal/fileserver
+
+Client for the logger's HTTP server (`Firmware/ILTM_Module/FileServer.h`):
+`List` (`GET /files?dir=`) and `Download` (`GET /download?name=`). The
+firmware adds the leading `/` to `name` itself, so it is sent without one.
+Names in the listing are reduced to the base name because older ESP32 cores
+return full paths. Downloads go to a `.part` file that is renamed when
+complete, and a short body is treated as an error.
+
 ## internal/config
 
 See [configuration.md](configuration.md) for the user-facing side.
@@ -168,7 +241,10 @@ Pretends to be the ILTM so the app can be tested without the car:
 - sends ITV telemetry (float32 values, id 0 = ms since start) to UDP 5002 and
   the name list every 10 s;
 - accepts one command per TCP connection on 2002, reading up to 256 bytes or
-  1 s like the firmware, and resends names on `Name_Sync_Req` (3).
+  1 s like the firmware, and resends names on `Name_Sync_Req` (3);
+- generates three 60 s logs in a temp folder at start-up and serves them
+  like the firmware's file server on `-http-port` (default 80) while
+  command 6 is on.
 
 Signal ids and names follow the ILTM's vehicle config. Ids 111 and 113 copy
 the firmware's naming mistake (`PosLat_L`) so the app's rename fix gets

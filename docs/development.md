@@ -20,9 +20,15 @@ Elsewhere they run in `sh`.
 
 ## Simulator
 
-`cmd/iltm-sim` speaks the ILTM's protocol; see [backend.md](backend.md). The
-Python version for the Arduino UNO Q follows the same protocol with the id
-`UNOQ-SIM` and correct GPS names; see [device-protocol.md](device-protocol.md).
+`cmd/iltm-sim` speaks the ILTM's protocol; see [backend.md](backend.md).
+
+`tools/uno_q_sim.py` is the Python version for the Arduino UNO Q (standard
+library only). It uses the id `UNOQ-SIM` and correct GPS names, and has the
+same file server on port 8080: at start-up it writes three fake `.bin` logs
+into `--logs-dir` (default `tools/logs`, ignored by git) if that folder has
+none, and serves every file there, so `.bin` or `.csv` files you copy in can
+be pulled from the Logs tab. Its log encoder produces byte-for-byte the same
+files as `logfile.Encode`. See [device-protocol.md](device-protocol.md).
 
 ## Tests
 

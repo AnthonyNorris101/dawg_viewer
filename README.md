@@ -5,10 +5,10 @@ app in `FSAE_Data_Acquisition/Software`. Runs on Windows, macOS and Linux.
 
 Done:
   - [x] live data view.
+  - [x] log/csv download.
+  - [x] csv data viewer.
 
 Todo:
-  - [ ] log/csv download.
-  - [ ] csv data viewer.
   - [ ] more layouts
   - [ ] savable/premade presets
 

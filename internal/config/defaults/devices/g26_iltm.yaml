@@ -54,6 +54,15 @@ commands:
     Enable_NTP:                 { id: 11, data: 1 }
     Disable_NTP:                { id: 11, data: 0 }
 
+# HTTP file server on the logger, used by the Logs tab to download SD-card
+# logs. "enable"/"disable" name commands from commands.list. While it is on
+# the logger stops recording, so the app turns it off when you leave the tab.
+fileserver:
+  port: 80
+  logs_dir: /logs
+  enable: Enable_FileServer
+  disable: Disable_FileServer
+
 # Rename signals by id. The firmware names ids 111, 113 and 115 all
 # "PosLat_L"; these are the low halves of latitude, longitude and altitude.
 rename:

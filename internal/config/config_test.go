@@ -40,8 +40,11 @@ func TestSeedAndLoadDefaults(t *testing.T) {
 	if iltm.Rename[113] != "PosLong_L" || iltm.Commands.List["Name_Sync_Req"].ID != 3 {
 		t.Fatalf("g26-iltm parsed wrong: %+v", iltm)
 	}
-	if _, ok := byID["uno-q-sim"]; !ok {
-		t.Fatal("uno-q-sim profile missing")
+	if fs := iltm.FileServer; fs == nil || fs.Port != 80 || fs.LogsDir != "/logs" || iltm.Commands.List[fs.Enable].ID != 6 {
+		t.Fatalf("g26-iltm file server: %+v", iltm.FileServer)
+	}
+	if q, ok := byID["uno-q-sim"]; !ok || q.FileServer == nil || q.FileServer.Port != 8080 || q.Commands.List[q.FileServer.Disable].Data != 0 {
+		t.Fatalf("uno-q-sim file server: %+v", q.FileServer)
 	}
 }
 

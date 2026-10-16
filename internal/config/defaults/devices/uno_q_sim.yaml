@@ -8,7 +8,8 @@
 #   - optionally answer the discovery request with
 #     {"type":"UGAMS_DATA","id":"<device_id>","port":5000,"firmware":"x.y.z"}
 #     to the sender's address and port;
-#   - optionally accept the name-sync command on the commands port.
+#   - optionally accept the name-sync command on the commands port;
+#   - optionally serve SD-card logs like the ILTM's file server (see below).
 # See docs/device-protocol.md in the app's source for the byte layout.
 
 id: uno-q-sim
@@ -36,7 +37,17 @@ commands:
   pad_to: 0
   name_sync: Name_Sync_Req
   list:
-    Name_Sync_Req: { id: 3, data: 0 }
+    Name_Sync_Req:      { id: 3, data: 0 }
+    Enable_FileServer:  { id: 6, data: 1 }
+    Disable_FileServer: { id: 6, data: 0 }
+
+# File server for the Logs tab, as in tools/uno_q_sim.py. Port 8080 because
+# ports below 1024 need root on Linux.
+fileserver:
+  port: 8080
+  logs_dir: /logs
+  enable: Enable_FileServer
+  disable: Disable_FileServer
 
 channels:
   RPM:  { label: RPM,   precision: 0, pinned: true, large: true, order: 0 }

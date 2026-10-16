@@ -1,41 +1,68 @@
-import { useReducer } from 'react'
+import { useEffect, useReducer } from 'react'
 import { ChannelList } from '../components/ChannelList'
 import { PlotPanel } from '../components/PlotPanel'
 import { StatusBar } from '../components/StatusBar'
-import { createDemoSession } from '../data/demo'
+import type { Session } from '../data/session'
 import { createViewSync } from '../plot/sync'
 import { layoutReducer, makeLayout } from '../state/layout'
 import { toolbarButton } from '../ui'
+import { startingPanels } from '../viewer/openLog'
 
-const session = createDemoSession()
 const sync = createViewSync('viewer')
-const initialLayout = makeLayout([
-  ['rpm', 'tps'],
-  ['ws_fl', 'ws_fr', 'ws_rl', 'ws_rr'],
-  ['acc_x', 'acc_y'],
-])
-
 const NO_CHANNELS: string[] = []
 
-export function ViewerView() {
-  const [layout, dispatch] = useReducer(layoutReducer, initialLayout)
+interface Props {
+  session: Session | null
+  loading: boolean
+  error: string
+  onOpenFile: () => void
+}
+
+export function ViewerView({ session, loading, error, onOpenFile }: Props) {
+  return (
+    <div className="flex h-full flex-col">
+      {session ? (
+        <LoadedLog key={session.path} session={session} onOpenFile={onOpenFile} loading={loading} />
+      ) : (
+        <div className="grid flex-1 place-items-center">
+          <div className="space-y-3 text-center">
+            <p className="text-sm text-zinc-400">
+              Open a CSV or .bin log, or pick one in the Logs tab.
+            </p>
+            <button type="button" className={toolbarButton} disabled={loading} onClick={onOpenFile}>
+              {loading ? 'Opening…' : 'Open log…'}
+            </button>
+          </div>
+        </div>
+      )}
+      {error && <p className="border-t border-zinc-800 px-3 py-1 text-xs text-red-300">{error}</p>}
+    </div>
+  )
+}
+
+function LoadedLog({
+  session,
+  loading,
+  onOpenFile,
+}: {
+  session: Session
+  loading: boolean
+  onOpenFile: () => void
+}) {
+  const [layout, dispatch] = useReducer(layoutReducer, startingPanels(session), makeLayout)
   const activePanel = layout.panels.find((p) => p.id === layout.activeId)
 
   const resetZoom = () => {
     const { time } = session
-    sync.setRange({ min: time[0], max: time[time.length - 1] })
+    if (time.length > 1) sync.setRange({ min: time[0], max: time[time.length - 1] })
   }
+  useEffect(resetZoom, [session])
 
   return (
-    <div className="flex h-full flex-col">
+    <>
       <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-1.5">
-        <button
-          type="button"
-          className={toolbarButton}
-          disabled
-          title="Opening CSV logs is the next step"
-        >
-          Open log…
+        <button type="button" className={toolbarButton} disabled={loading} onClick={onOpenFile}>
+          {loading ? 'Opening…' : 'Open log…'}
         </button>
         <button
           type="button"
@@ -47,7 +74,9 @@ export function ViewerView() {
         <button type="button" className={toolbarButton} onClick={resetZoom}>
           Reset zoom
         </button>
-        <span className="ml-auto truncate text-xs text-zinc-500">{session.name}</span>
+        <span className="ml-auto truncate text-xs text-zinc-500" title={session.path}>
+          {session.name}
+        </span>
       </div>
 
       <div className="flex min-h-0 flex-1">
@@ -72,6 +101,6 @@ export function ViewerView() {
       </div>
 
       <StatusBar session={session} sync={sync} />
-    </div>
+    </>
   )
 }

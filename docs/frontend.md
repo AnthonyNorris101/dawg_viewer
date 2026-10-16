@@ -5,11 +5,12 @@ React + TypeScript + Tailwind, built with Vite, plots drawn with uPlot.
 ```
 src/App.tsx        tabs (Live / Logs / Viewer)
 src/live/          live view: connection, store, follow mode, cards, plots, status bar
-src/views/         LiveView, ViewerView (the log viewer, currently on demo data)
+src/views/         LiveView, LogsView, ViewerView
+src/viewer/        turning a loaded log into a viewer session
 src/plot/          uPlot wrapper and shared plot view state
 src/components/    channel list and viewer plot panel
 src/state/         plot layout reducer
-src/data/          demo session and shared colours
+src/data/          viewer session type and shared colours
 ```
 
 ## Guiding rule: high-rate updates bypass React
@@ -106,8 +107,19 @@ the last panel empties it instead, so there's always one.
 Views stay mounted and are hidden with CSS, so live data and plot layouts
 survive tab switches.
 
+## Logs tab (views/LogsView.tsx)
+
+Two lists: logs on the logger (Connect, Download selected, Download latest,
+Done) and files in the logs folder (Open, and Convert for `.bin`). The view is
+only mounted while its tab is open: opening it loads the local list, and
+closing it calls `FinishRemote` so the logger starts recording again.
+Download progress comes from `logs:progress` events.
+
 ## Viewer tab
 
-Still runs on `data/demo.ts`, a synthetic session with a small deterministic
-PRNG so it's the same on every launch. It will load CSV logs once the log
-browser is done.
+`viewer/openLog.ts` loads a file through `LogService.Load`, decodes the base64
+columns with `fetch` on a `data:` URL into `Float64Array`s, and builds a
+`Session` (units and precision come from the current device profile when the
+names match). `ViewerView` remounts per file, so the plot layout starts fresh
+with RPM/TPS1, temperatures and accelerations if present, else the first
+channels. Opening a log from the Logs tab switches to the Viewer.

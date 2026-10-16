@@ -63,7 +63,13 @@ func main() {
 	rate := flag.Int("rate", 50, "telemetry packets per second")
 	discPort := flag.Int("discovery-port", 4999, "discovery UDP port")
 	cmdPort := flag.Int("cmd-port", 2002, "command TCP port")
+	httpPort := flag.Int("http-port", 80, "file server HTTP port (turned on by command 6)")
 	flag.Parse()
+
+	files, err := newFileServer(*httpPort)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	var mu sync.Mutex
 	dest := &net.UDPAddr{IP: net.ParseIP(*target), Port: *port}
@@ -125,16 +131,27 @@ func main() {
 					}
 				}
 				fields, _ := itv.Decode(buf[:n])
+				cmd, data := -1, uint64(0)
 				for _, f := range fields {
-					if f.ID == 1 {
-						log.Printf("command %d from %s (%d bytes)", f.Int, c.RemoteAddr(), n)
-						if f.Int == 3 {
-							select {
-							case sendNames <- struct{}{}:
-							default:
-							}
-						}
+					switch f.ID {
+					case 1:
+						cmd = int(f.Int)
+					case 2:
+						data = f.Int
 					}
+				}
+				if cmd < 0 {
+					return
+				}
+				log.Printf("command %d (data %d) from %s (%d bytes)", cmd, data, c.RemoteAddr(), n)
+				switch cmd {
+				case 3:
+					select {
+					case sendNames <- struct{}{}:
+					default:
+					}
+				case 6:
+					files.set(data == 1)
 				}
 			}(c)
 		}

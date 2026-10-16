@@ -15,11 +15,13 @@ import (
 var assets embed.FS
 
 func main() {
+	live := services.NewLiveService(configFlag(os.Args[1:]))
 	app := application.New(application.Options{
 		Name:        "Dawg Viewer",
 		Description: "FSAE data acquisition viewer",
 		Services: []application.Service{
-			application.NewService(services.NewLiveService(configFlag(os.Args[1:]))),
+			application.NewService(live),
+			application.NewService(services.NewLogService(live)),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
