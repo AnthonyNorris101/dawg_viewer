@@ -30,4 +30,5 @@ export interface Settings {
     "historyMinutes": number;
     "staleAfterS": number;
     "logsDir": string;
+    "csvRateHz": number;
 }

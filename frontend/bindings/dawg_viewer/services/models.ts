@@ -48,13 +48,14 @@ export interface RemoteLog {
 
 export interface ViewerChannel {
     "name": string;
-    "values": string | null;
+    "unit": string;
 }
 
 export interface ViewerLog {
     "name": string;
     "path": string;
     "rows": number;
-    "time": string | null;
+    "note": string;
+    "dataUrl": string;
     "channels": ViewerChannel[] | null;
 }

@@ -15,64 +15,73 @@ import (
 	"time"
 )
 
-func Load(path string, rename map[uint8]string, hz int) (*Table, error) {
-	if strings.EqualFold(filepath.Ext(path), ".bin") {
-		f, err := os.Open(path)
-		if err != nil {
-			return nil, err
-		}
-		defer f.Close()
-		log, err := Decode(f)
-		if err != nil {
-			return nil, err
-		}
-		for id, name := range rename {
-			if _, ok := log.Names[id]; ok {
-				log.Names[id] = name
-			}
-		}
-		return Normalize(log, hz), nil
-	}
+type Source string
 
+const (
+	SourceBin  Source = "bin"
+	SourceLong Source = "long"
+	SourceWide Source = "wide"
+)
+
+func Load(path string, opts Options) (*Table, Source, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer f.Close()
-	return LoadCSV(f, hz)
+
+	if strings.EqualFold(filepath.Ext(path), ".bin") {
+		log, err := Decode(f)
+		if err != nil {
+			return nil, "", err
+		}
+		applyRename(log, opts.Rename)
+		t, err := Normalize(log, opts)
+		return t, SourceBin, err
+	}
+	return LoadCSV(f, opts)
 }
 
-func LoadCSV(r io.Reader, hz int) (*Table, error) {
+func LoadCSV(r io.Reader, opts Options) (*Table, Source, error) {
 	br := bufio.NewReader(r)
 	first, err := br.Peek(4096)
 	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, bufio.ErrBufferFull) {
-		return nil, err
+		return nil, "", err
 	}
 	line, _, _ := strings.Cut(string(first), "\n")
 
 	cr := csv.NewReader(br)
 	cr.FieldsPerRecord = -1
 	cr.LazyQuotes = true
-	cr.TrimLeadingSpace = true
-	if strings.Count(line, "\t") > strings.Count(line, ",") {
-		cr.Comma = '\t'
-	}
+	cr.Comma = detectDelimiter(line)
 
 	header, err := cr.Read()
 	if err != nil {
-		return nil, fmt.Errorf("reading header: %w", err)
+		return nil, "", fmt.Errorf("reading header: %w", err)
 	}
 	for i := range header {
 		header[i] = strings.TrimSpace(strings.TrimPrefix(header[i], "\uFEFF"))
 	}
 	if len(header) < 2 {
-		return nil, errors.New("expected a time column and at least one data column")
+		return nil, "", errors.New("expected a time column and at least one data column")
 	}
 
 	if isLong(header) {
-		return loadLong(cr, hz)
+		t, err := loadLong(cr, opts)
+		return t, SourceLong, err
 	}
-	return loadWide(cr, header)
+	t, err := loadWide(cr, header, cr.Comma == ';')
+	return t, SourceWide, err
+}
+
+func detectDelimiter(line string) rune {
+	best, count := ',', strings.Count(line, ",")
+	for _, d := range []rune{'\t', ';'} {
+		if n := strings.Count(line, string(d)); n > count {
+			best, count = d, n
+		}
+	}
+	return best
 }
 
 func isLong(h []string) bool {
@@ -80,7 +89,7 @@ func isLong(h []string) bool {
 		(strings.EqualFold(h[2], "signal") || strings.EqualFold(h[2], "signal_name")) && strings.EqualFold(h[3], "value")
 }
 
-func loadLong(cr *csv.Reader, hz int) (*Table, error) {
+func loadLong(cr *csv.Reader, opts Options) (*Table, error) {
 	log := &Log{Names: map[uint8]string{}}
 	for {
 		rec, err := cr.Read()
@@ -105,13 +114,40 @@ func loadLong(cr *csv.Reader, hz int) (*Table, error) {
 	if len(log.Entries) == 0 {
 		return nil, errors.New("no data rows")
 	}
-	return Normalize(log, hz), nil
+	return Normalize(log, opts)
 }
 
-func loadWide(cr *csv.Reader, header []string) (*Table, error) {
+func uniqueNames(header []string) []string {
+	out := make([]string, len(header))
+	seen := map[string]int{}
+	for i, h := range header {
+		if h == "" {
+			h = fmt.Sprintf("Column %d", i+1)
+		}
+		seen[h]++
+		if n := seen[h]; n > 1 {
+			h = fmt.Sprintf("%s (%d)", h, n)
+		}
+		out[i] = h
+	}
+	return out
+}
+
+func loadWide(cr *csv.Reader, header []string, decimalComma bool) (*Table, error) {
+	names := uniqueNames(header)
+	parseNum := func(s string) (float64, bool) {
+		s = strings.TrimSpace(s)
+		if decimalComma {
+			s = strings.Replace(s, ",", ".", 1)
+		}
+		f, err := strconv.ParseFloat(s, 64)
+		return f, err == nil
+	}
+
 	var times []float64
-	cols := make([][]float64, len(header)-1)
-	numeric := make([]bool, len(header)-1)
+	cols := make([][]float64, len(names)-1)
+	numeric := make([]bool, len(names)-1)
+	var units []string
 	isoTime := false
 
 	for {
@@ -125,8 +161,11 @@ func loadWide(cr *csv.Reader, header []string) (*Table, error) {
 		if len(rec) == 0 {
 			continue
 		}
-		t, iso, ok := parseTime(strings.TrimSpace(rec[0]))
+		t, iso, ok := parseTime(strings.TrimSpace(rec[0]), parseNum)
 		if !ok {
+			if times == nil && units == nil {
+				units = rec
+			}
 			continue
 		}
 		isoTime = isoTime || iso
@@ -134,7 +173,7 @@ func loadWide(cr *csv.Reader, header []string) (*Table, error) {
 		for c := range cols {
 			v := math.NaN()
 			if c+1 < len(rec) {
-				if f, err := strconv.ParseFloat(strings.TrimSpace(rec[c+1]), 64); err == nil {
+				if f, ok := parseNum(rec[c+1]); ok {
 					v = f
 					numeric[c] = true
 				}
@@ -146,21 +185,40 @@ func loadWide(cr *csv.Reader, header []string) (*Table, error) {
 		return nil, errors.New("no rows with a readable time in the first column")
 	}
 
-	scale := 1000.0
-	if isoTime || strings.Contains(strings.ToLower(header[0]), "ms") || times[0] > 1e11 {
-		scale = 1
+	t := &Table{}
+	var order []int
+	if distinct := countDistinct(times); distinct*100 < len(times) {
+		order = make([]int, len(times))
+		t.TimeMS = make([]float64, len(times))
+		for i := range order {
+			order[i] = i
+			t.TimeMS[i] = float64(i) * 1000
+		}
+		t.Note = fmt.Sprintf("the time column has only %d different values, so rows are shown in file order and the time axis counts rows", distinct)
+	} else {
+		keep, epochMS := consistentTimes(times, isoTime)
+		if len(keep) == 0 {
+			return nil, errors.New("no rows with a usable time in the first column")
+		}
+		timeUnit := ""
+		if len(units) > 0 {
+			timeUnit = strings.ToLower(strings.TrimSpace(units[0]))
+		}
+		scale := 1000.0
+		if isoTime || epochMS || strings.Contains(strings.ToLower(header[0]), "ms") || timeUnit == "ms" {
+			scale = 1
+		}
+		order = keep
+		sort.SliceStable(order, func(a, b int) bool { return times[order[a]] < times[order[b]] })
+		t.TimeMS = make([]float64, len(order))
+		for i, o := range order {
+			t.TimeMS[i] = times[o] * scale
+		}
+		if skipped := len(times) - len(order); skipped > 0 {
+			t.Note = fmt.Sprintf("skipped %d rows whose time didn't fit the rest of the file", skipped)
+		}
 	}
-	order := make([]int, len(times))
-	for i := range order {
-		order[i] = i
-	}
-	sort.SliceStable(order, func(a, b int) bool { return times[order[a]] < times[order[b]] })
-
-	t := &Table{TimeMS: make([]float64, len(times))}
-	for i, o := range order {
-		t.TimeMS[i] = times[o] * scale
-	}
-	for c, name := range header[1:] {
+	for c, name := range names[1:] {
 		if !numeric[c] {
 			continue
 		}
@@ -169,7 +227,13 @@ func loadWide(cr *csv.Reader, header []string) (*Table, error) {
 			vals[i] = cols[c][o]
 		}
 		fillGaps(vals)
+		unit := ""
+		if c+1 < len(units) {
+			unit = strings.TrimSpace(units[c+1])
+		}
 		t.Columns = append(t.Columns, name)
+		t.Units = append(t.Units, unit)
+		t.Precise = append(t.Precise, true)
 		t.Values = append(t.Values, vals)
 	}
 	if len(t.Columns) == 0 {
@@ -178,8 +242,49 @@ func loadWide(cr *csv.Reader, header []string) (*Table, error) {
 	return t, nil
 }
 
-func parseTime(s string) (float64, bool, bool) {
-	if f, err := strconv.ParseFloat(s, 64); err == nil {
+const epochMSThreshold = 1e11
+
+func consistentTimes(times []float64, iso bool) ([]int, bool) {
+	big := 0
+	for _, t := range times {
+		if t > epochMSThreshold {
+			big++
+		}
+	}
+	epochMS := !iso && big*2 > len(times)
+
+	var keep []int
+	for i, t := range times {
+		if iso || (t > epochMSThreshold) == epochMS {
+			keep = append(keep, i)
+		}
+	}
+	if len(keep) == 0 {
+		return nil, epochMS
+	}
+
+	sorted := make([]float64, len(keep))
+	for i, k := range keep {
+		sorted[i] = times[k]
+	}
+	sort.Float64s(sorted)
+	q1, q3 := sorted[len(sorted)/4], sorted[len(sorted)*3/4]
+	minute := 60.0
+	if iso || epochMS {
+		minute *= 1000
+	}
+	margin := math.Max(3*(q3-q1), minute)
+	out := keep[:0]
+	for _, k := range keep {
+		if times[k] >= q1-margin && times[k] <= q3+margin {
+			out = append(out, k)
+		}
+	}
+	return out, epochMS
+}
+
+func parseTime(s string, parseNum func(string) (float64, bool)) (float64, bool, bool) {
+	if f, ok := parseNum(s); ok {
 		return f, false, true
 	}
 	for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.999999999", "2006-01-02 15:04:05.999999999"} {
@@ -207,4 +312,15 @@ func fillGaps(v []float64) {
 			next = v[i]
 		}
 	}
+}
+
+func countDistinct(v []float64) int {
+	seen := make(map[float64]struct{}, 64)
+	for _, x := range v {
+		seen[x] = struct{}{}
+		if len(seen)*100 >= len(v) {
+			return len(seen)
+		}
+	}
+	return len(seen)
 }

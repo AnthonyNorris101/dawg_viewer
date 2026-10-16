@@ -37,6 +37,7 @@ existing file is ever overwritten.
 | `history_minutes` | 30 | live data kept for plots |
 | `stale_after_s` | 2 | seconds without data before the status says "No new data" |
 | `logs_dir` | `logs` | where downloaded logs go (relative to the config folder) |
+| `csv_rate_hz` | 100 | samples per second of `_Normalized.csv` and of `.bin`/long-CSV logs opened in the Viewer (1–1000) |
 
 When the app saves `device`, it rewrites only that line so your comments and
 layout stay as they are.

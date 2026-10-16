@@ -2,10 +2,13 @@ package services
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -22,10 +25,7 @@ import (
 	"dawg_viewer/internal/logfile"
 )
 
-const (
-	EventLogProgress = "logs:progress"
-	normalizeHz      = 100
-)
+const EventLogProgress = "logs:progress"
 
 func init() {
 	application.RegisterEvent[LogProgress](EventLogProgress)
@@ -57,16 +57,30 @@ type LogProgress struct {
 }
 
 type ViewerChannel struct {
-	Name   string `json:"name"`
-	Values []byte `json:"values"`
+	Name string `json:"name"`
+	Unit string `json:"unit"`
 }
 
 type ViewerLog struct {
 	Name     string          `json:"name"`
 	Path     string          `json:"path"`
 	Rows     int             `json:"rows"`
-	Time     []byte          `json:"time"`
+	Note     string          `json:"note"`
+	DataURL  string          `json:"dataUrl"`
 	Channels []ViewerChannel `json:"channels"`
+}
+
+func (t deviceTarget) options() logfile.Options {
+	convs, _ := t.profile.Converters()
+	cal := map[string]func(float64) float64{}
+	for name, c := range convs {
+		cal[name] = c
+	}
+	var combine []logfile.Combine
+	for _, c := range t.profile.Combine {
+		combine = append(combine, logfile.Combine{Name: c.Name, Hi: c.Hi, Lo: c.Lo})
+	}
+	return logfile.Options{Hz: t.csvHz, Rename: t.profile.RenameByID(), Calibrate: cal, Combine: combine}
 }
 
 type LogService struct {
@@ -74,6 +88,49 @@ type LogService struct {
 
 	mu       sync.Mutex
 	serverOn *deviceTarget
+	blobs    map[string][]byte
+}
+
+const logDataPath = "/logdata/"
+
+func LogDataMiddleware(s *LogService) application.Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			s.serveBlob(w, r, next)
+		})
+	}
+}
+
+func (s *LogService) serveBlob(w http.ResponseWriter, r *http.Request, next http.Handler) {
+	token, ok := strings.CutPrefix(r.URL.Path, logDataPath)
+	if !ok {
+		next.ServeHTTP(w, r)
+		return
+	}
+	s.mu.Lock()
+	blob, found := s.blobs[token]
+	delete(s.blobs, token)
+	s.mu.Unlock()
+	if !found {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Length", strconv.Itoa(len(blob)))
+	w.Write(blob)
+}
+
+func (s *LogService) keepBlob(blob []byte) string {
+	var b [16]byte
+	rand.Read(b[:])
+	token := hex.EncodeToString(b[:])
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.blobs == nil || len(s.blobs) >= 2 {
+		s.blobs = map[string][]byte{}
+	}
+	s.blobs[token] = blob
+	return token
 }
 
 func NewLogService(live *LiveService) *LogService {
@@ -187,7 +244,7 @@ func (s *LogService) Download(names []string) ([]LocalLog, error) {
 		}
 
 		report("converting", "")
-		c, err := logfile.Convert(dst, t.rename(), normalizeHz)
+		c, err := logfile.Convert(dst, t.options())
 		if err != nil {
 			failed = append(failed, name)
 			report("error", err.Error())
@@ -250,7 +307,7 @@ func (s *LogService) ConvertLocal(path string) (LocalLog, error) {
 	if err != nil {
 		return LocalLog{}, err
 	}
-	c, err := logfile.Convert(path, t.rename(), normalizeHz)
+	c, err := logfile.Convert(path, t.options())
 	if err != nil {
 		return LocalLog{}, err
 	}
@@ -271,11 +328,12 @@ func (s *LogService) PickFile() (string, error) {
 }
 
 func (s *LogService) Load(path string) (*ViewerLog, error) {
-	var rename map[uint8]string
+	opts := logfile.Options{}
+	profile := ""
 	if t, err := s.live.target(); err == nil {
-		rename = t.rename()
+		opts, profile = t.options(), t.profile.Name
 	}
-	tab, err := logfile.Load(path, rename, normalizeHz)
+	tab, source, err := logfile.Load(path, opts)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", filepath.Base(path), err)
 	}
@@ -283,14 +341,36 @@ func (s *LogService) Load(path string) (*ViewerLog, error) {
 		return nil, fmt.Errorf("%s has no data", filepath.Base(path))
 	}
 
+	rows := len(tab.TimeMS)
+	blob := make([]byte, 0, (len(tab.Columns)+1)*rows*8)
 	start := tab.TimeMS[0]
-	times := make([]float64, len(tab.TimeMS))
-	for i, ms := range tab.TimeMS {
-		times[i] = (ms - start) / 1000
+	for _, ms := range tab.TimeMS {
+		blob = binary.LittleEndian.AppendUint64(blob, math.Float64bits((ms-start)/1000))
 	}
-	v := &ViewerLog{Name: filepath.Base(path), Path: path, Rows: len(times), Time: float64Bytes(times)}
+	for _, col := range tab.Values {
+		for _, v := range col {
+			blob = binary.LittleEndian.AppendUint64(blob, math.Float64bits(v))
+		}
+	}
+	v := &ViewerLog{Name: filepath.Base(path), Path: path, Rows: rows, DataURL: logDataPath + s.keepBlob(blob)}
+	if source != logfile.SourceWide {
+		hz := opts.Hz
+		if hz <= 0 {
+			hz = logfile.DefaultHz
+		}
+		v.Note = fmt.Sprintf("resampled to %d Hz", hz)
+		if profile != "" {
+			v.Note += ", renames and calibrations from " + profile
+		}
+	}
+	if tab.Note != "" {
+		if v.Note != "" {
+			v.Note += "; "
+		}
+		v.Note += tab.Note
+	}
 	for c, name := range tab.Columns {
-		v.Channels = append(v.Channels, ViewerChannel{Name: name, Values: float64Bytes(tab.Values[c])})
+		v.Channels = append(v.Channels, ViewerChannel{Name: name, Unit: tab.Units[c]})
 	}
 	return v, nil
 }
@@ -309,14 +389,6 @@ func (s *LogService) OpenLogsFolder() error {
 		return err
 	}
 	return application.Get().Env.OpenFileManager(t.logsDir, false)
-}
-
-func float64Bytes(v []float64) []byte {
-	b := make([]byte, 0, len(v)*8)
-	for _, f := range v {
-		b = binary.LittleEndian.AppendUint64(b, math.Float64bits(f))
-	}
-	return b
 }
 
 func localLog(path string) (LocalLog, error) {

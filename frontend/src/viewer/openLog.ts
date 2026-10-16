@@ -1,43 +1,41 @@
 import { LogService } from '../../bindings/dawg_viewer/services'
-import type { ViewerLog } from '../../bindings/dawg_viewer/services/models'
 import { CHANNEL_COLORS, type Channel, type Session } from '../data/session'
 import { info } from '../live/connection'
-
-async function float64s(base64: string | null): Promise<Float64Array> {
-  if (!base64) return new Float64Array(0)
-  const res = await fetch(`data:application/octet-stream;base64,${base64}`)
-  return new Float64Array(await res.arrayBuffer())
-}
-
-async function toSession(log: ViewerLog): Promise<Session> {
-  const metas = info.get()?.channels ?? {}
-  const time = await float64s(log.time)
-  const channels: Channel[] = await Promise.all(
-    (log.channels ?? []).map(async (c, i) => ({
-      id: c.name,
-      name: c.name,
-      group: 'Log',
-      unit: metas[c.name]?.unit ?? '',
-      color: CHANNEL_COLORS[i % CHANNEL_COLORS.length],
-      precision: metas[c.name]?.precision ?? 2,
-      data: await float64s(c.values),
-    })),
-  )
-  const duration = time.length > 1 ? time[time.length - 1] - time[0] : 0
-  return {
-    name: log.name,
-    path: log.path,
-    sampleRate: duration > 0 ? Math.round((time.length - 1) / duration) : 0,
-    time,
-    channels,
-    byId: new Map(channels.map((c) => [c.id, c])),
-  }
-}
 
 export async function openLog(path: string): Promise<Session> {
   const log = await LogService.Load(path)
   if (!log) throw new Error(`Couldn't read ${path}`)
-  return toSession(log)
+
+  const res = await fetch(log.dataUrl)
+  if (!res.ok) throw new Error(`Couldn't read the data for ${log.name} (${res.status})`)
+  const buf = await res.arrayBuffer()
+  const rows = log.rows
+  const channelsIn = log.channels ?? []
+  if (buf.byteLength !== (channelsIn.length + 1) * rows * 8) {
+    throw new Error(`The data for ${log.name} arrived incomplete`)
+  }
+
+  const metas = info.get()?.channels ?? {}
+  const time = new Float64Array(buf, 0, rows)
+  const channels: Channel[] = channelsIn.map((c, i) => ({
+    id: c.name,
+    name: c.name,
+    group: 'Log',
+    unit: c.unit || metas[c.name]?.unit || '',
+    color: CHANNEL_COLORS[i % CHANNEL_COLORS.length],
+    precision: metas[c.name]?.precision ?? 2,
+    data: new Float64Array(buf, (i + 1) * rows * 8, rows),
+  }))
+  const duration = rows > 1 ? time[rows - 1] - time[0] : 0
+  return {
+    name: log.name,
+    path: log.path,
+    note: log.note,
+    sampleRate: duration > 0 ? Math.round((rows - 1) / duration) : 0,
+    time,
+    channels,
+    byId: new Map(channels.map((c) => [c.id, c])),
+  }
 }
 
 export async function pickAndOpenLog(): Promise<Session | null> {

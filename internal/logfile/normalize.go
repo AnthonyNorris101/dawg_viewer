@@ -11,10 +11,55 @@ import (
 	"strings"
 )
 
+const (
+	DefaultHz = 100
+	maxRows   = 5_000_000
+)
+
+type Combine struct {
+	Name string
+	Hi   string
+	Lo   string
+}
+
+type Options struct {
+	Hz        int
+	Rename    map[uint8]string
+	Calibrate map[string]func(float64) float64
+	Combine   []Combine
+}
+
+func (o Options) hz() int {
+	if o.Hz <= 0 {
+		return DefaultHz
+	}
+	return o.Hz
+}
+
 type Table struct {
+	Note    string
 	TimeMS  []float64
 	Columns []string
+	Units   []string
+	Precise []bool
 	Values  [][]float64
+}
+
+func (t *Table) column(name string) int {
+	for i, c := range t.Columns {
+		if c == name {
+			return i
+		}
+	}
+	return -1
+}
+
+func (t *Table) add(name, unit string, precise bool, values []float64) {
+	i := sort.SearchStrings(t.Columns, name)
+	t.Columns = append(t.Columns[:i], append([]string{name}, t.Columns[i:]...)...)
+	t.Units = append(t.Units[:i], append([]string{unit}, t.Units[i:]...)...)
+	t.Precise = append(t.Precise[:i], append([]bool{precise}, t.Precise[i:]...)...)
+	t.Values = append(t.Values[:i], append([][]float64{values}, t.Values[i:]...)...)
 }
 
 type sample struct {
@@ -37,7 +82,15 @@ func columnNames(log *Log) map[uint8]string {
 	return out
 }
 
-func Normalize(log *Log, hz int) *Table {
+func applyRename(log *Log, rename map[uint8]string) {
+	for id, name := range rename {
+		if _, ok := log.Names[id]; ok {
+			log.Names[id] = name
+		}
+	}
+}
+
+func Normalize(log *Log, opts Options) (*Table, error) {
 	names := columnNames(log)
 	series := map[string][]sample{}
 	for _, e := range log.Entries {
@@ -46,21 +99,37 @@ func Normalize(log *Log, hz int) *Table {
 			name = fmt.Sprintf("UNKNOWN_%d", e.ID)
 		}
 		v := float64(e.Value)
+		if conv, ok := opts.Calibrate[log.Names[e.ID]]; ok {
+			v = conv(v)
+		}
 		if math.IsNaN(v) || math.IsInf(v, 0) {
 			continue
 		}
 		series[name] = append(series[name], sample{float64(e.TimeStampMS), v})
 	}
-	return resample(series, hz)
+
+	t, err := resample(series, opts.hz())
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range opts.Combine {
+		hi, lo := t.column(c.Hi), t.column(c.Lo)
+		if hi < 0 || lo < 0 || t.column(c.Name) >= 0 {
+			continue
+		}
+		sum := make([]float64, len(t.TimeMS))
+		for i := range sum {
+			sum[i] = t.Values[hi][i] + t.Values[lo][i]
+		}
+		t.add(c.Name, t.Units[hi], true, sum)
+	}
+	return t, nil
 }
 
-func resample(series map[string][]sample, hz int) *Table {
+func resample(series map[string][]sample, hz int) (*Table, error) {
 	t := &Table{}
 	if len(series) == 0 {
-		return t
-	}
-	if hz <= 0 {
-		hz = 100
+		return t, nil
 	}
 	step := float64(1000 / hz)
 
@@ -75,13 +144,18 @@ func resample(series map[string][]sample, hz int) *Table {
 	}
 	sort.Strings(t.Columns)
 
+	if rows := (end-start)/step + 1; rows > maxRows {
+		return nil, fmt.Errorf("the log spans %.1f hours, too long to resample at %d Hz (bad timestamps?)", (end-start)/3.6e6, hz)
+	}
 	for x := start; x < end+step; x += step {
 		t.TimeMS = append(t.TimeMS, x)
 	}
 	for _, name := range t.Columns {
 		t.Values = append(t.Values, interpolate(series[name], t.TimeMS))
+		t.Units = append(t.Units, "")
+		t.Precise = append(t.Precise, false)
 	}
-	return t
+	return t, nil
 }
 
 func dedupeLast(s []sample) []sample {
@@ -115,23 +189,37 @@ func interpolate(s []sample, grid []float64) []float64 {
 	return out
 }
 
+func formatTableValue(v float64, precise bool) string {
+	if precise {
+		return strconv.FormatFloat(v, 'f', -1, 64)
+	}
+	return strconv.FormatFloat(float64(float32(v)), 'f', -1, 32)
+}
+
 func WriteTableCSV(w io.Writer, t *Table) error {
 	bw := bufio.NewWriter(w)
 	bw.WriteString("timestamp_ms")
 	for _, c := range t.Columns {
 		bw.WriteByte(',')
-		bw.WriteString(c)
+		bw.WriteString(csvField(c))
 	}
 	bw.WriteByte('\n')
 	for i, ts := range t.TimeMS {
 		bw.WriteString(strconv.FormatFloat(ts, 'f', -1, 64))
 		for c := range t.Columns {
 			bw.WriteByte(',')
-			bw.WriteString(strconv.FormatFloat(t.Values[c][i], 'g', -1, 64))
+			bw.WriteString(formatTableValue(t.Values[c][i], t.Precise[c]))
 		}
 		bw.WriteByte('\n')
 	}
 	return bw.Flush()
+}
+
+func csvField(s string) string {
+	if strings.ContainsAny(s, ",\"\n") {
+		return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+	}
+	return s
 }
 
 type Converted struct {
@@ -140,7 +228,7 @@ type Converted struct {
 	Table      *Table
 }
 
-func Convert(binPath string, rename map[uint8]string, hz int) (*Converted, error) {
+func Convert(binPath string, opts Options) (*Converted, error) {
 	in, err := os.Open(binPath)
 	if err != nil {
 		return nil, err
@@ -150,14 +238,14 @@ func Convert(binPath string, rename map[uint8]string, hz int) (*Converted, error
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", binPath, err)
 	}
-	for id, name := range rename {
-		if _, ok := log.Names[id]; ok {
-			log.Names[id] = name
-		}
+	applyRename(log, opts.Rename)
+	table, err := Normalize(log, opts)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", binPath, err)
 	}
 
 	base := strings.TrimSuffix(binPath, ".bin")
-	c := &Converted{CSV: base + ".csv", Normalized: base + "_Normalized.csv", Table: Normalize(log, hz)}
+	c := &Converted{CSV: base + ".csv", Normalized: base + "_Normalized.csv", Table: table}
 	if err := writeFile(c.CSV, func(w io.Writer) error { return WriteCSV(w, log) }); err != nil {
 		return nil, err
 	}

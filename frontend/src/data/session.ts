@@ -11,6 +11,7 @@ export interface Channel {
 export interface Session {
   name: string
   path: string
+  note: string
   sampleRate: number
   time: Float64Array
   channels: Channel[]

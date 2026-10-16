@@ -244,6 +244,7 @@ type deviceTarget struct {
 	addr      netip.Addr
 	configDir string
 	logsDir   string
+	csvHz     int
 }
 
 func (s *LiveService) target() (deviceTarget, error) {
@@ -256,6 +257,7 @@ func (s *LiveService) target() (deviceTarget, error) {
 		profile:   *s.active,
 		configDir: s.dir.Path,
 		logsDir:   config.ResolvePath(s.dir.Path, s.settings.LogsDir),
+		csvHz:     s.settings.CSVRateHz,
 	}
 	if s.session != nil {
 		t.addr, _ = netip.ParseAddr(s.session.Status().DeviceIP)
@@ -264,16 +266,6 @@ func (s *LiveService) target() (deviceTarget, error) {
 		t.addr, _ = netip.ParseAddr(s.active.Address)
 	}
 	return t, nil
-}
-
-func (t deviceTarget) rename() map[uint8]string {
-	out := map[uint8]string{}
-	for id, name := range t.profile.Rename {
-		if id >= 0 && id <= 255 {
-			out[uint8(id)] = name
-		}
-	}
-	return out
 }
 
 func (t deviceTarget) sendCommand(ctx context.Context, name string) error {

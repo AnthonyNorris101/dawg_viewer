@@ -117,9 +117,9 @@ Download progress comes from `logs:progress` events.
 
 ## Viewer tab
 
-`viewer/openLog.ts` loads a file through `LogService.Load`, decodes the base64
-columns with `fetch` on a `data:` URL into `Float64Array`s, and builds a
-`Session` (units and precision come from the current device profile when the
+`viewer/openLog.ts` loads a file through `LogService.Load`, fetches its
+`dataUrl` once as an `ArrayBuffer`, and builds a `Session` whose columns are
+`Float64Array` views straight into that buffer (no copying) (units and precision come from the current device profile when the
 names match). `ViewerView` remounts per file, so the plot layout starts fresh
 with RPM/TPS1, temperatures and accelerations if present, else the first
 channels. Opening a log from the Logs tab switches to the Viewer.

@@ -16,3 +16,7 @@ stale_after_s: 2
 
 # Folder where downloaded and converted logs are saved.
 logs_dir: logs
+
+# Samples per second of the evenly spaced CSV made from each downloaded log,
+# and of .bin logs opened in the Viewer.
+csv_rate_hz: 100

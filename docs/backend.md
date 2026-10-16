@@ -48,10 +48,15 @@ names: `live:frame`, `live:status`, `live:channels`; they're registered with
 - `FinishRemote` sends `fileserver.disable`. While the file server is on the
   firmware stops logging and disables CAN, so this is called when the Logs
   tab closes and when the app shuts down.
-- `Load` reads a `.bin` or CSV with `logfile.Load` and returns the columns as
-  base64-encoded little-endian float64 arrays (`[]byte` in Go). That is about
-  half the size of JSON numbers and decodes in the browser with one `fetch`
-  of a `data:` URL; float64 keeps GPS values exact.
+- `Load` reads a file with `logfile.Load`, using the selected profile's
+  renames, calibrations and `combine` list and `csv_rate_hz`. It returns only
+  metadata (name, rows, channel names and units, a note on how it was
+  processed) plus a one-time `dataUrl`. The columns themselves are packed into
+  one little-endian float64 block — time, then each channel — and served from
+  that URL by `LogDataMiddleware` on the app's asset server. The block is
+  deleted once fetched (at most two are kept). This avoids base64 inside JSON,
+  which made a 724,000-row CSV a 131 MB string; float64 keeps GPS values
+  exact.
 - `LocalLogs`, `ConvertLocal`, `PickFile` (native file dialog),
   `LogsFolder`, `OpenLogsFolder`.
 
@@ -152,7 +157,9 @@ frame rate. The data model and goroutine layout are in
 ## internal/logfile
 
 Reads the ILTM's SD-card logs (`Firmware/ILTM_Module/DataLogger.h`, version 2)
-and turns them into CSVs and tables.
+and any CSV log, and turns them into CSVs and tables for the viewer.
+
+### Decoding `.bin`
 
 - **Header:** `0xDEADBEEF`, version byte, signal count, then `[id][len][name]`
   per signal. Only version 2 is read (what the current firmware writes); the
@@ -165,30 +172,71 @@ and turns them into CSVs and tables.
   final XOR: `^crc32.Update(0xFFFFFFFF, crc32.IEEETable, data)`. The Python
   app XORed the standard CRC with a constant, which only matches full
   56-entry blocks.
-- `WriteCSV` writes the long CSV the Python app made:
-  `timestamp_ms,id,signal,value`, 4 decimals, `UNKNOWN_<id>` for ids missing
-  from the header.
-- `Normalize` puts every signal on one time grid (10 ms at 100 Hz) from the
-  first to the last sample, interpolating linearly in time and holding the
-  first/last value at the edges. Columns are sorted by name. Two ids with the
-  same name become `Name_<id>`. Where several samples share a timestamp the
-  last one wins. The Python version reindexed onto the grid and only kept
-  samples that fell exactly on a grid timestamp, then interpolated by row
-  position; this uses every sample and interpolates by time.
-- `Convert` decodes a `.bin`, applies the profile's `rename`, and writes
-  `<name>.csv` and `<name>_Normalized.csv` next to it (via temp files).
-- `Load` reads a log for the viewer: `.bin` (normalized), the long CSV
-  (normalized), or any wide CSV whose first column is time. Wide CSVs may use
-  commas or tabs, ISO timestamps, seconds or milliseconds (a header containing
-  "ms", or values above 1e11, are taken as milliseconds), and can have units
-  rows or text columns, which are skipped. Rows are sorted by time and gaps
-  in each column are filled forward then backward.
-- `Encode` writes a log in the firmware's format; the tests and the
-  simulator use it.
+- `Encode` writes the same format; the tests and the simulators use it.
 
-Tests build frames with a literal port of the firmware's COBS and CRC code
-and check `Encode` produces the same bytes, plus normalization, `Convert`,
-and each CSV layout found in the Archive.
+### The two CSVs made from a `.bin` (`Convert`)
+
+- `<name>.csv` — the long CSV the Python app made:
+  `timestamp_ms,id,signal,value`, one row per logged value, names after the
+  profile's `rename`, `UNKNOWN_<id>` for ids missing from the header. Values
+  are **as logged** (no calibration) and written with the shortest decimal
+  that reproduces the float32 exactly. Python wrote 4 decimals, which cut GPS
+  to about 11 m.
+- `<name>_Normalized.csv` — one column per channel on an even time grid
+  (`csv_rate_hz`, 100 by default). Calibrations from the profile are applied
+  and `combine` channels (full-precision `PosLat`, `PosLong`, `PosAlt`) are
+  added, so values match the live view. Logged channels are written at
+  float32 precision; combined channels at full float64 precision.
+
+`Normalize` interpolates linearly in time between each channel's samples and
+holds the first/last value at the edges. Columns are sorted by name; two ids
+with the same name become `Name_<id>`; where several samples share a
+timestamp the last one wins. The Python version reindexed onto the grid and
+kept only samples that landed exactly on a grid timestamp, then interpolated
+by row position; this uses every sample and interpolates by time. A log whose
+timestamps would need more than 5 million grid rows (bad timestamps) is
+rejected instead of exhausting memory.
+
+### Loading for the viewer (`Load`)
+
+| File | What happens |
+|---|---|
+| `.bin` | decoded, renamed, calibrated, combined and resampled like `_Normalized.csv` |
+| long CSV (`timestamp_ms,id,signal[_name],value`) | calibrated, combined and resampled |
+| any other CSV | used as is: first column is time, the rest are channels |
+
+Calibrations are only applied to the first two, which hold raw logged values;
+a wide CSV such as `_Normalized.csv` has already been processed.
+
+Wide CSVs are read leniently because the Archive holds several layouts:
+
+- **Delimiter:** comma, tab or semicolon, whichever the header uses most.
+  With semicolons, decimal commas (`90,25`) are accepted, as Excel writes them
+  in many locales. A byte-order mark is ignored.
+- **Columns:** empty names become `Column N`, duplicates get ` (2)`, ` (3)`.
+  Columns with no numbers (e.g. `source`) are dropped. Empty cells are filled
+  from the previous value, then the next.
+- **Units row:** a non-numeric row straight after the header is read as
+  units and shown in the viewer.
+- **Time:** numbers or ISO date-times. Milliseconds if the values are epoch
+  milliseconds (above 1e11), the header contains "ms", the units row says
+  `ms`, or the times are ISO; otherwise seconds. Rows are sorted by time.
+- **Broken time columns:**
+  - If the times mix two clocks (some seconds-since-boot, most epoch ms),
+    only rows on the majority clock are kept.
+  - Rows outside Tukey's fences — more than 3 interquartile ranges beyond the
+    middle half, with at least a minute of slack — are dropped as corrupt.
+  - If the time column has fewer distinct values than 1% of the rows (the
+    Log46 files were exported with float32 epoch ms, leaving 2–4 distinct
+    values), rows are shown in file order and the time axis counts rows.
+
+  Each of these sets `Table.Note`, which the viewer shows next to the file
+  name.
+
+Tests: frames built with a literal port of the firmware's COBS and CRC code;
+`Encode` byte-identical to that; normalization, calibration, combining,
+precision of the written values, the row limit, `Convert`, every CSV layout
+found in the Archive (including the broken time columns), and error cases.
 
 ## internal/fileserver
 

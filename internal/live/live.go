@@ -225,7 +225,7 @@ func newHub(opts Options, s *Session) *hub {
 	}
 	var calErrs []string
 	for name, c := range p.Calibrations {
-		conv, err := buildCalibration(c)
+		conv, err := c.Converter()
 		if err != nil {
 			calErrs = append(calErrs, fmt.Sprintf("calibration %s: %v", name, err))
 			continue
@@ -253,41 +253,6 @@ func newHub(opts Options, s *Session) *hub {
 	}
 	h.rateSince = h.start
 	return h
-}
-
-func buildCalibration(c config.Calibration) (calib.Converter, error) {
-	switch c.Type {
-	case "linear":
-		div := c.Div
-		if div == 0 {
-			div = 1
-		}
-		mult := c.Mult
-		if mult == 0 {
-			mult = 1
-		}
-		return calib.Linear(mult, div, c.Add)
-	case "steinhart_f":
-		if len(c.Points) != 3 {
-			return nil, fmt.Errorf("needs exactly 3 points, got %d", len(c.Points))
-		}
-		var pts [3]calib.SteinhartPoint
-		for i, p := range c.Points {
-			pts[i] = calib.SteinhartPoint{ADC: p[0], TempF: p[1]}
-		}
-		rFixed, adcMax := c.RFixed, c.ADCMax
-		if rFixed == 0 {
-			rFixed = 1000
-		}
-		if adcMax == 0 {
-			adcMax = 4095
-		}
-		toGround := c.ThermistorToGround == nil || *c.ThermistorToGround
-		conv, _, err := calib.Steinhart(pts, rFixed, adcMax, toGround)
-		return conv, err
-	default:
-		return nil, fmt.Errorf("unknown type %q (use linear or steinhart_f)", c.Type)
-	}
 }
 
 func (h *hub) run(ctx context.Context, packets <-chan link.Packet, lst *link.Listener, found <-chan link.Found) {

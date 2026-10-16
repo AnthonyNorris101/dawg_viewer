@@ -123,7 +123,7 @@ func TestBinToCSV(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ := os.ReadFile(csvPath)
-	want := "timestamp_ms,id,signal,value\n0,11,RPM,0.0000\n1,12,UNKNOWN_12,1.5000\n2,11,RPM,3.0000\n"
+	want := "timestamp_ms,id,signal,value\n0,11,RPM,0\n1,12,UNKNOWN_12,1.5\n2,11,RPM,3\n"
 	if string(got) != want {
 		t.Fatalf("csv:\n%s", got)
 	}

@@ -10,6 +10,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -146,7 +147,7 @@ func WriteCSV(w io.Writer, log *Log) error {
 		if !ok {
 			name = fmt.Sprintf("UNKNOWN_%d", e.ID)
 		}
-		fmt.Fprintf(bw, "%d,%d,%s,%.4f\n", e.TimeStampMS, e.ID, name, e.Value)
+		fmt.Fprintf(bw, "%d,%d,%s,%s\n", e.TimeStampMS, e.ID, csvField(name), strconv.FormatFloat(float64(e.Value), 'f', -1, 32))
 	}
 	return bw.Flush()
 }

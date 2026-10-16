@@ -16,15 +16,17 @@ var assets embed.FS
 
 func main() {
 	live := services.NewLiveService(configFlag(os.Args[1:]))
+	logs := services.NewLogService(live)
 	app := application.New(application.Options{
 		Name:        "Dawg Viewer",
 		Description: "FSAE data acquisition viewer",
 		Services: []application.Service{
 			application.NewService(live),
-			application.NewService(services.NewLogService(live)),
+			application.NewService(logs),
 		},
 		Assets: application.AssetOptions{
-			Handler: application.AssetFileServerFS(assets),
+			Handler:    application.AssetFileServerFS(assets),
+			Middleware: services.LogDataMiddleware(logs),
 		},
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,

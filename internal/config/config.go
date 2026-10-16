@@ -14,6 +14,8 @@ import (
 	"strings"
 
 	"go.yaml.in/yaml/v3"
+
+	"dawg_viewer/internal/calib"
 )
 
 //go:embed defaults
@@ -111,6 +113,7 @@ type Settings struct {
 	HistoryMinutes int     `yaml:"history_minutes" json:"historyMinutes"`
 	StaleAfterS    float64 `yaml:"stale_after_s" json:"staleAfterS"`
 	LogsDir        string  `yaml:"logs_dir" json:"logsDir"`
+	CSVRateHz      int     `yaml:"csv_rate_hz" json:"csvRateHz"`
 }
 
 func (s *Settings) applyDefaults() {
@@ -128,6 +131,12 @@ func (s *Settings) applyDefaults() {
 	}
 	if s.LogsDir == "" {
 		s.LogsDir = "logs"
+	}
+	if s.CSVRateHz <= 0 {
+		s.CSVRateHz = 100
+	}
+	if s.CSVRateHz > 1000 {
+		s.CSVRateHz = 1000
 	}
 }
 
@@ -232,6 +241,64 @@ type Calibration struct {
 	RFixed             float64      `yaml:"r_fixed"`
 	ADCMax             float64      `yaml:"adc_max"`
 	ThermistorToGround *bool        `yaml:"thermistor_to_ground"`
+}
+
+func (c Calibration) Converter() (calib.Converter, error) {
+	switch c.Type {
+	case "linear":
+		mult, div := c.Mult, c.Div
+		if mult == 0 {
+			mult = 1
+		}
+		if div == 0 {
+			div = 1
+		}
+		return calib.Linear(mult, div, c.Add)
+	case "steinhart_f":
+		if len(c.Points) != 3 {
+			return nil, fmt.Errorf("needs exactly 3 points, got %d", len(c.Points))
+		}
+		var pts [3]calib.SteinhartPoint
+		for i, p := range c.Points {
+			pts[i] = calib.SteinhartPoint{ADC: p[0], TempF: p[1]}
+		}
+		rFixed, adcMax := c.RFixed, c.ADCMax
+		if rFixed == 0 {
+			rFixed = 1000
+		}
+		if adcMax == 0 {
+			adcMax = 4095
+		}
+		toGround := c.ThermistorToGround == nil || *c.ThermistorToGround
+		conv, _, err := calib.Steinhart(pts, rFixed, adcMax, toGround)
+		return conv, err
+	default:
+		return nil, fmt.Errorf("unknown type %q (use linear or steinhart_f)", c.Type)
+	}
+}
+
+func (p *Profile) Converters() (map[string]calib.Converter, []error) {
+	out := map[string]calib.Converter{}
+	var errs []error
+	for name, c := range p.Calibrations {
+		conv, err := c.Converter()
+		if err != nil {
+			errs = append(errs, fmt.Errorf("calibration %s: %w", name, err))
+			continue
+		}
+		out[name] = conv
+	}
+	return out, errs
+}
+
+func (p *Profile) RenameByID() map[uint8]string {
+	out := map[uint8]string{}
+	for id, name := range p.Rename {
+		if id >= 0 && id <= 255 {
+			out[uint8(id)] = name
+		}
+	}
+	return out
 }
 
 type ChannelMeta struct {

@@ -76,6 +76,7 @@ function LoadedLog({
         </button>
         <span className="ml-auto truncate text-xs text-zinc-500" title={session.path}>
           {session.name}
+          {session.note && <span className="text-zinc-600"> · {session.note}</span>}
         </span>
       </div>
 
