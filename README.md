@@ -3,15 +3,22 @@
 Desktop app for the UGA Motorsports data logger (ILTM). Replaces the Python
 app in `FSAE_Data_Acquisition/Software`. Runs on Windows, macOS and Linux.
 
-Status: live data view done. Next: log browser/CSV downloader, then viewing
-CSV logs in the Viewer tab.
+Done:
+  - [x] live data view.
 
-How it works and why it's built this way: see [docs/](docs/README.md). The
-code itself carries almost no comments; the reasoning lives there.
+Todo:
+  - [ ] log/csv download.
+  - [ ] csv data viewer.
+  - [ ] more layouts
+  - [ ] savable/premade presets
+
+
+Check out the docs for information, if you are making commits to the project
+ensure that your changes make their way in as well. [docs/](docs/README.md).
 
 ## Using it
 
-1. Join the same network as the logger (the pit router).
+1. Join the same network as the logger.
 2. Start Dawg Viewer and pick the device at the top of the **Live** tab.
 
 The app finds the logger by itself (UDP discovery), learns channel names from
