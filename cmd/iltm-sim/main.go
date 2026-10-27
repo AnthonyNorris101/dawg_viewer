@@ -23,6 +23,10 @@ const tau = 2 * math.Pi
 
 func speed(t float64) float64 { return 38 + 18*math.Sin(tau*t/23) + 7*math.Sin(tau*t/6.1+1) }
 func pedal(t float64) float64 { return math.Sin(tau*t/23 + 0.9) }
+func gear(t float64) float64  { return math.Min(5, math.Max(1, math.Floor(speed(t)/12))) }
+
+var gearSensorADC = map[int]float64{0: 875, 1: 535, 2: 1200, 3: 1675, 4: 2240, 5: 2733, 6: 3344}
+
 func steer(t float64) float64 { return 70*math.Sin(tau*t/11) + 20*math.Sin(tau*t/3.7) }
 
 var signals = []signal{
@@ -37,7 +41,8 @@ var signals = []signal{
 	{36, "RadTemp", func(t float64) float64 { return 1400 - 500*math.Exp(-t/120) }},
 	{40, "StrAngle", steer},
 	{52, "TPS1", func(t float64) float64 { return math.Max(0, math.Min(100, 50+60*pedal(t))) }},
-	{55, "Gear", func(t float64) float64 { return math.Min(5, math.Max(1, math.Floor(speed(t)/12))) }},
+	{55, "Gear", gear},
+	{38, "GearRaw", func(t float64) float64 { return gearSensorADC[int(gear(t))] }},
 	{101, "AccelX", func(t float64) float64 { return 0.9 * math.Cos(tau*t/23) }},
 	{102, "AccelY", func(t float64) float64 { return steer(t) / 70 * 1.4 }},
 	{103, "AccelZ", func(t float64) float64 { return 1 + 0.15*math.Sin(tau*t/0.21) }},

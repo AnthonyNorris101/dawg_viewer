@@ -80,9 +80,17 @@ on Windows, macOS and Linux runners, then publishes a GitHub release tagged
 - macOS: universal (Apple Silicon + Intel) `.app` in a zip, plus a `.dmg`
 - Linux: `.deb`, `.rpm`, AppImage and portable `.tar.gz`
 
-The portable downloads include a `dawg_config` folder next to the app. The
-version comes from `info.version` in `build/config.yml`; bump it there for a
-new version. Pull requests are tested and built but not released.
+The portable downloads include a `dawg_config` folder next to the app. Pull
+requests are tested and built but not released.
+
+To release a new version, set it and push to `main`:
+
+```bash
+just version 0.2.0
+```
+
+`just version` on its own shows the current one. The app shows its version at
+the right of the tab bar.
 
 Layout:
 

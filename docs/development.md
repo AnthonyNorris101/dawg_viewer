@@ -66,6 +66,23 @@ files as `logfile.Encode`. See [device-protocol.md](device-protocol.md).
 
 Pull requests run steps 1 and 2 so packaging problems show up before merging.
 
+### Version number
+
+The version is written in eight places across five files, because each
+platform's packaging reads its own: `info.version` in `build/config.yml`,
+`file_version` and `ProductVersion` in `build/windows/info.json` (the `.exe`'s
+file details), `CFBundleShortVersionString` and `CFBundleVersion` in
+`build/darwin/Info.plist` and `Info.dev.plist`, and `version` in
+`build/linux/nfpm/nfpm.yaml`. Wails can regenerate those files from
+`build/config.yml`, but that rewrites them entirely, so instead
+`cmd/setversion` (`just version X.Y.Z`) edits just the version fields. With no
+argument it prints the version; `-check` fails if the files disagree, which
+the test job runs so a release can't ship with mixed numbers.
+
+`main.go` embeds `build/config.yml` and reads `info.version` at build time
+(`dev` if it can't), and the frontend shows it in the tab bar. The release
+tag adds the CI run number: `v0.2.0-build.17`.
+
 The shared setup (`.github/actions/setup`) installs Go, Node, GTK 4 and
 WebKitGTK 6 on Linux (what Wails builds against there), the Wails CLI at the
 version in `go.mod`, and the frontend packages. nfpm, which builds the `.deb`

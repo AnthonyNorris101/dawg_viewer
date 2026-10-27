@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"go.yaml.in/yaml/v3"
 
 	"dawg_viewer/services"
 )
@@ -14,7 +15,23 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+//go:embed build/config.yml
+var buildConfig []byte
+
+func appVersion() string {
+	var c struct {
+		Info struct {
+			Version string `yaml:"version"`
+		} `yaml:"info"`
+	}
+	if yaml.Unmarshal(buildConfig, &c) != nil || c.Info.Version == "" {
+		return "dev"
+	}
+	return c.Info.Version
+}
+
 func main() {
+	services.Version = appVersion()
 	live := services.NewLiveService(configFlag(os.Args[1:]))
 	logs := services.NewLogService(live)
 	app := application.New(application.Options{

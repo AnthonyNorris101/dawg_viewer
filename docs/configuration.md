@@ -58,7 +58,7 @@ layout stay as they are.
 | `fileserver` | the logger's HTTP file server: `port` (80), `logs_dir` (`/logs`), and the `enable`/`disable` command names. Leave it out for devices without one; the Logs tab then says there are no logs to download. |
 | `rename` | signal id → name, overriding what the device sends |
 | `combine` | `{ name, hi, lo }`: add two channels into one |
-| `calibrations` | channel name → `linear` (mult/div/add) or `steinhart_f` (3 points, r_fixed, adc_max) |
+| `calibrations` | channel name → `linear` (mult/div/add), `steinhart_f` (3 points, r_fixed, adc_max) or `gear` (gear-position sensor ADC → gear; see below) |
 | `channels` | channel name → `label`, `unit`, `precision`, `pinned`, `large`, `order`, `warn_min/max`, `crit_min/max` |
 
 Unknown keys are reported as errors (catches typos). A broken profile is
@@ -109,3 +109,26 @@ For `devices/uno_q_sim.yaml` use `port: 8080`, and add the two commands to
     Enable_FileServer:  { id: 6, data: 1 }
     Disable_FileServer: { id: 6, data: 0 }
 ```
+
+### The `gear` calibration
+
+Turns the gear-position sensor's 12-bit ADC reading (`GearRaw`, SIM input on
+CAN 213 bytes 2–3) into a gear number. The ranges are fixed in
+`gearFromADC` in `internal/config/config.go`:
+
+| ADC reading | Gear |
+|---|---|
+| 386–684 | 1 |
+| 685–1064 | 0 (neutral) |
+| 1065–1334 | 2 |
+| 1335–2013 | 3 |
+| 2014–2465 | 4 |
+| 2466–2999 | 5 |
+| 3000–3688 | 6 |
+
+Anything else gives no value: the sample is dropped rather than shown as a
+wrong gear (a disconnected or shorted sensor reads near 0 or 4095). Neutral
+sits between 1 and 2, as on the shifter. Like other calibrations it applies to
+the live view, `_Normalized.csv` and logs opened in the Viewer, not to the raw
+long CSV. To change the ranges, edit `gearFromADC` and its test
+(`TestGearCalibration`).

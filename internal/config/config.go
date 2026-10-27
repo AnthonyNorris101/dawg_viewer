@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -272,8 +273,32 @@ func (c Calibration) Converter() (calib.Converter, error) {
 		toGround := c.ThermistorToGround == nil || *c.ThermistorToGround
 		conv, _, err := calib.Steinhart(pts, rFixed, adcMax, toGround)
 		return conv, err
+
+	case "gear":
+		return gearFromADC, nil
 	default:
-		return nil, fmt.Errorf("unknown type %q (use linear or steinhart_f)", c.Type)
+		return nil, fmt.Errorf("unknown type %q (use linear, steinhart_f or gear)", c.Type)
+	}
+}
+
+func gearFromADC(raw float64) float64 {
+	switch {
+	case raw > 385 && raw < 685:
+		return 1
+	case raw >= 685 && raw < 1065:
+		return 0
+	case raw >= 1065 && raw < 1335:
+		return 2
+	case raw >= 1335 && raw < 2014:
+		return 3
+	case raw >= 2014 && raw < 2466:
+		return 4
+	case raw >= 2466 && raw < 3000:
+		return 5
+	case raw >= 3000 && raw < 3689:
+		return 6
+	default:
+		return math.NaN()
 	}
 }
 

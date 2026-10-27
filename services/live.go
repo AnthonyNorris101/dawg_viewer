@@ -35,7 +35,10 @@ type ProfileSummary struct {
 	File string `json:"file"`
 }
 
+var Version = "dev"
+
 type Info struct {
+	Version       string                        `json:"version"`
 	ConfigDir     config.Dir                    `json:"configDir"`
 	Settings      config.Settings               `json:"settings"`
 	Profiles      []ProfileSummary              `json:"profiles"`
@@ -102,6 +105,7 @@ func (s *LiveService) Info() Info {
 
 func (s *LiveService) infoLocked() Info {
 	info := Info{
+		Version:       Version,
 		ConfigDir:     s.dir,
 		Settings:      s.settings,
 		ProfileErrors: s.badProfiles,

@@ -6,6 +6,7 @@
 import * as config$0 from "../internal/config/models.js";
 
 export interface Info {
+    "version": string;
     "configDir": config$0.Dir;
     "settings": config$0.Settings;
     "profiles": ProfileSummary[] | null;

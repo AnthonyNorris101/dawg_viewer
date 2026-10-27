@@ -63,6 +63,14 @@ def pedal(t):
     return math.sin(TAU * t / 23 + 0.9)
 
 
+def gear(t):
+    return min(5.0, max(1.0, math.floor(speed(t) / 12)))
+
+
+# Middle of each gear's ADC range in the app's "gear" calibration (0 = neutral).
+GEAR_SENSOR_ADC = {0: 875, 1: 535, 2: 1200, 3: 1675, 4: 2240, 5: 2733, 6: 3344}
+
+
 def steer(t):
     return 70 * math.sin(TAU * t / 11) + 20 * math.sin(TAU * t / 3.7)
 
@@ -80,7 +88,8 @@ SIGNALS = [
     (36, "RadTemp", lambda t: 1400 - 500 * math.exp(-t / 120)),  # raw ADC counts
     (40, "StrAngle", steer),
     (52, "TPS1", lambda t: max(0.0, min(100.0, 50 + 60 * pedal(t)))),
-    (55, "Gear", lambda t: min(5.0, max(1.0, math.floor(speed(t) / 12)))),
+    (55, "Gear", gear),
+    (38, "GearRaw", lambda t: GEAR_SENSOR_ADC[int(gear(t))]),  # raw sensor ADC
     (101, "AccelX", lambda t: 0.9 * math.cos(TAU * t / 23)),
     (102, "AccelY", lambda t: steer(t) / 70 * 1.4),
     (103, "AccelZ", lambda t: 1 + 0.15 * math.sin(TAU * t / 0.21)),

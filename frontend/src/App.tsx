@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { Session } from './data/session'
+import { useInfo } from './live/connection'
 import { openLog, pickAndOpenLog } from './viewer/openLog'
 import { LiveView } from './views/LiveView'
 import { LogsView } from './views/LogsView'
@@ -15,6 +16,7 @@ const TABS: { id: Tab; label: string }[] = [
 
 function App() {
   const [tab, setTab] = useState<Tab>('live')
+  const version = useInfo()?.version
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -54,6 +56,7 @@ function App() {
             {t.label}
           </button>
         ))}
+        {version && <span className="ml-auto text-xs text-zinc-600">v{version}</span>}
       </nav>
       <div className={`min-h-0 flex-1 ${tab === 'live' ? '' : 'hidden'}`}>
         <LiveView />

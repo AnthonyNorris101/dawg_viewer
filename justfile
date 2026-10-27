@@ -62,6 +62,10 @@ fmt:
 bindings:
     wails3 generate bindings -clean=true -ts -i
 
+# Show the app version, or set it everywhere (e.g. `just version 0.2.0`)
+version *new:
+    go run ./cmd/setversion {{ new }}
+
 # Build the app for this OS into bin/
 build:
     wails3 build

@@ -41,6 +41,12 @@ commands:
     Enable_FileServer:  { id: 6, data: 1 }
     Disable_FileServer: { id: 6, data: 0 }
 
+# Convert raw readings on this computer. gear: gear-position sensor ADC counts
+# to gear 1-6 (0 = neutral).
+calibrations:
+  GearRaw:
+    type: gear
+
 # File server for the Logs tab, as in tools/uno_q_sim.py. Port 8080 because
 # ports below 1024 need root on Linux.
 fileserver:
@@ -52,4 +58,5 @@ fileserver:
 channels:
   RPM:  { label: RPM,   precision: 0, pinned: true, large: true, order: 0 }
   VSS:  { label: Speed, precision: 1, pinned: true, large: true, order: 1 }
-  Gear: { label: Gear,  precision: 0, pinned: true, order: 2 }
+  GearRaw: { label: Gear,  precision: 0, pinned: true, order: 2 }
+  Gear: { label: Gear (ECU), precision: 0, order: 30 }

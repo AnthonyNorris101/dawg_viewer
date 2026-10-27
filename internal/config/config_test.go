@@ -1,6 +1,7 @@
 package config
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -124,5 +125,56 @@ func TestNamesCacheRoundTrip(t *testing.T) {
 	out := LoadNames(dir, "g26-iltm")
 	if len(out) != 2 || out[11] != "RPM" {
 		t.Fatalf("got %v", out)
+	}
+}
+
+func TestGearCalibration(t *testing.T) {
+	conv, err := Calibration{Type: "gear"}.Converter()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := map[float64]float64{
+		386: 1, 684: 1,
+		685: 0, 1064: 0,
+		1065: 2, 1334: 2,
+		1335: 3, 2013: 3,
+		2014: 4, 2465: 4,
+		2466: 5, 2999: 5,
+		3000: 6, 3688: 6,
+	}
+	for raw, want := range cases {
+		if got := conv(raw); got != want {
+			t.Errorf("raw %v: got gear %v, want %v", raw, got, want)
+		}
+	}
+	for _, raw := range []float64{0, 385, 3689, 4095} {
+		if got := conv(raw); !math.IsNaN(got) {
+			t.Errorf("raw %v: got gear %v, want no value", raw, got)
+		}
+	}
+}
+
+func TestDefaultProfilesShowOnlyTheTranslatedGear(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Locate(dir); err != nil {
+		t.Fatal(err)
+	}
+	profiles, bad := LoadProfiles(dir)
+	if len(bad) != 0 {
+		t.Fatal(bad)
+	}
+	for _, p := range profiles {
+		var pinned []string
+		for name, m := range p.Channels {
+			if m.Pinned && m.Label == "Gear" {
+				pinned = append(pinned, name)
+			}
+		}
+		if len(pinned) != 1 || pinned[0] != "GearRaw" || p.Calibrations["GearRaw"].Type != "gear" {
+			t.Errorf("%s: gear cards %v, GearRaw calibration %q", p.ID, pinned, p.Calibrations["GearRaw"].Type)
+		}
+		if p.Channels["Gear"].Pinned {
+			t.Errorf("%s: the untranslated ECU gear is still pinned", p.ID)
+		}
 	}
 }

@@ -79,12 +79,15 @@ combine:
 # Convert raw readings on this computer. Types:
 #   linear:      value * mult / div + add
 #   steinhart_f: thermistor ADC counts to °F, fitted through three points
+#   gear:        gear-position sensor ADC counts to gear 1-6 (0 = neutral)
 calibrations:
   RadTemp:
     type: steinhart_f
     points: [[336, 266], [999, 176], [2924, 68]]
     r_fixed: 1000
     adc_max: 4095
+  GearRaw:
+    type: gear
 
 # How channels are shown. Pinned channels get a card at the top of the live
 # view, in "order". Optional: label, unit, precision, large, and the
@@ -92,7 +95,8 @@ calibrations:
 channels:
   RPM:      { label: RPM,           precision: 0, pinned: true, large: true, order: 0 }
   VSS:      { label: Speed,         precision: 1, pinned: true, large: true, order: 1 }
-  Gear:     { label: Gear,          precision: 0, pinned: true, order: 2 }
+  Gear:     { label: Gear (ECU), precision: 0, order: 30 }
+  GearRaw:  { label: Gear,          precision: 0, pinned: true, order: 2 }
   CLT1:     { label: Coolant Temp,  precision: 1, pinned: true, order: 3 }
   RadTemp:  { label: Radiator Temp, precision: 1, unit: °F, pinned: true, order: 4 }
   OilTemp:  { label: Oil Temp,      precision: 1, pinned: true, order: 5 }

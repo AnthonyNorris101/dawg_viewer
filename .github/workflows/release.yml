@@ -30,6 +30,9 @@ jobs:
           wails3 generate bindings -clean=true -ts -i
           npm --prefix frontend run build
 
+      - name: Version numbers agree
+        run: go run ./cmd/setversion -check
+
       - name: Go vet and tests
         run: |
           go vet ./...
