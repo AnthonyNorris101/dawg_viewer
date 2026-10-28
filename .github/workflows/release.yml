@@ -52,6 +52,10 @@ jobs:
         include:
           - name: windows
             os: windows-latest
+            arch: amd64
+          - name: windows-arm64
+            os: windows-latest
+            arch: arm64
           - name: macos
             os: macos-latest
           - name: linux
@@ -72,7 +76,7 @@ jobs:
 
       - name: Build Windows app and installer
         if: runner.os == 'Windows'
-        run: wails3 task windows:package
+        run: wails3 task windows:package ARCH=${{ matrix.arch }}
 
       - name: Collect Windows files
         if: runner.os == 'Windows'
@@ -80,8 +84,8 @@ jobs:
           mkdir -p dist/portable
           cp bin/dawg_viewer.exe dist/portable/
           cp -r internal/config/defaults dist/portable/dawg_config
-          (cd dist/portable && 7z a -tzip ../DawgViewer-windows-amd64.zip .)
-          cp bin/dawg_viewer-amd64-installer.exe dist/DawgViewer-windows-amd64-setup.exe
+          (cd dist/portable && 7z a -tzip ../DawgViewer-windows-${{ matrix.arch }}.zip .)
+          cp bin/dawg_viewer-${{ matrix.arch }}-installer.exe dist/DawgViewer-windows-${{ matrix.arch }}-setup.exe
           rm -rf dist/portable
 
       - name: Build macOS app
@@ -179,7 +183,7 @@ jobs:
 
           | System | Download |
           |---|---|
-          | Windows | \`DawgViewer-windows-amd64-setup.exe\` (installer) or \`DawgViewer-windows-amd64.zip\` (portable) |
+          | Windows | \`DawgViewer-windows-amd64-setup.exe\` / \`DawgViewer-windows-amd64.zip\` (Intel/AMD), or \`DawgViewer-windows-arm64-setup.exe\` / \`DawgViewer-windows-arm64.zip\` (ARM64) |
           | macOS (Apple Silicon and Intel) | \`DawgViewer-macos-universal.zip\` or \`.dmg\` |
           | Linux | \`.deb\`, \`.rpm\`, \`.AppImage\`, or \`DawgViewer-linux-amd64.tar.gz\` (portable) |
 
