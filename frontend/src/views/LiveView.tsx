@@ -8,6 +8,7 @@ import { StatusHeader } from '../live/StatusHeader'
 import { liveSync, resumeFollow, showWindow, useFollow } from '../live/follow'
 import { layoutReducer, makeLayout } from '../state/layout'
 import { toolbarButton, toolbarButtonActive } from '../ui'
+import { GraphProfileControls } from '../components/GraphProfileControls'
 
 const initialLayout = makeLayout([
   ['RPM', 'TPS1'],
@@ -50,8 +51,15 @@ export function LiveView() {
   )
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-w-0 flex-col overflow-hidden">
       <StatusHeader />
+      <GraphProfileControls
+        layout={layout}
+        dispatch={dispatch}
+        names={channels.map((c) => c.name)}
+        windowS={windowS}
+        onWindow={showWindow}
+      />
       <div className="flex min-h-0 flex-1">
         <ChannelList
           channels={listChannels}
@@ -60,7 +68,7 @@ export function LiveView() {
         />
         <div className="flex min-w-0 flex-1 flex-col">
           <PinnedCards metas={metas} />
-          <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-1.5">
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-zinc-800 px-3 py-1.5">
             {WINDOWS.map(([s, label]) => (
               <button
                 key={label}

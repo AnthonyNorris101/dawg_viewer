@@ -39,7 +39,7 @@ function App() {
   }
 
   return (
-    <div className="flex h-full flex-col select-none">
+    <div className="flex h-full min-w-0 flex-col overflow-hidden select-none">
       <nav className="flex items-center gap-1 border-b border-zinc-800 px-3">
         <h1 className="mr-4 text-sm font-semibold tracking-tight">Dawg Viewer</h1>
         {TABS.map((t) => (

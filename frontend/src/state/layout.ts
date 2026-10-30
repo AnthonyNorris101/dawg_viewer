@@ -1,3 +1,5 @@
+import { validPanels } from './graphProfiles'
+
 export interface Panel {
   id: number
   channelIds: string[]
@@ -10,6 +12,7 @@ export interface Layout {
 }
 
 export type LayoutAction =
+  | { type: 'replaceLayout'; panels: string[][] }
   | { type: 'toggleChannel'; channelId: string }
   | { type: 'removeChannel'; panelId: number; channelId: string }
   | { type: 'addPanel' }
@@ -35,7 +38,16 @@ function updatePanel(layout: Layout, panelId: number, fn: (ids: string[]) => str
 
 export function layoutReducer(layout: Layout, action: LayoutAction): Layout {
   switch (action.type) {
+    case 'replaceLayout':
+      return validPanels(action.panels) ? makeLayout(action.panels) : layout
     case 'toggleChannel':
+      if (
+        !layout.panels
+          .find((p) => p.id === layout.activeId)
+          ?.channelIds.includes(action.channelId) &&
+        layout.panels.reduce((n, p) => n + p.channelIds.length, 0) >= 15
+      )
+        return layout
       return updatePanel(layout, layout.activeId, (ids) =>
         ids.includes(action.channelId)
           ? ids.filter((id) => id !== action.channelId)
@@ -46,6 +58,7 @@ export function layoutReducer(layout: Layout, action: LayoutAction): Layout {
         ids.filter((id) => id !== action.channelId),
       )
     case 'addPanel':
+      if (layout.panels.length >= 5) return layout
       return {
         panels: [...layout.panels, { id: layout.nextId, channelIds: [] }],
         activeId: layout.nextId,

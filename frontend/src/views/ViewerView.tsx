@@ -7,6 +7,7 @@ import { createViewSync } from '../plot/sync'
 import { layoutReducer, makeLayout } from '../state/layout'
 import { toolbarButton } from '../ui'
 import { startingPanels } from '../viewer/openLog'
+import { GraphProfileControls } from '../components/GraphProfileControls'
 
 const sync = createViewSync('viewer')
 const NO_CHANNELS: string[] = []
@@ -20,7 +21,7 @@ interface Props {
 
 export function ViewerView({ session, loading, error, onOpenFile }: Props) {
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-w-0 flex-col overflow-hidden">
       {session ? (
         <LoadedLog key={session.path} session={session} onOpenFile={onOpenFile} loading={loading} />
       ) : (
@@ -60,7 +61,12 @@ function LoadedLog({
 
   return (
     <>
-      <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-1.5">
+      <GraphProfileControls
+        layout={layout}
+        dispatch={dispatch}
+        names={session.channels.map((c) => c.id)}
+      />
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-zinc-800 px-3 py-1.5">
         <button type="button" className={toolbarButton} disabled={loading} onClick={onOpenFile}>
           {loading ? 'Opening…' : 'Open log…'}
         </button>
