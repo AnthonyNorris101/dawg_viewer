@@ -8,16 +8,32 @@ beforeEach(() => localStorage.clear())
 it('saves a profile and previews an offline code before applying it', async () => {
   const user = userEvent.setup()
   const dispatch = vi.fn()
+  const target = document.createElement('div')
+  document.body.append(target)
   render(
-    <GraphProfileControls layout={makeLayout([['RPM']])} dispatch={dispatch} names={['RPM']} />,
+    <GraphProfileControls
+      target={target}
+      layout={makeLayout([['RPM']], [320])}
+      dispatch={dispatch}
+      names={['RPM']}
+    />,
   )
-  await user.click(screen.getByRole('button', { name: 'Manage / share' }))
+  const profileButton = screen.getByRole('button', { name: 'Profiles' })
+  expect(profileButton).toHaveTextContent('Profiles')
+  await user.click(profileButton)
   await user.type(screen.getByLabelText('Profile name'), 'Engine')
   await user.click(screen.getByRole('button', { name: 'Save' }))
   expect(screen.getByRole('option', { name: 'Engine' })).toBeInTheDocument()
-  await user.click(screen.getByRole('button', { name: /^Share$/ }))
+  expect(JSON.parse(localStorage.getItem('dawg.graph-profiles.v1') ?? '[]')[0].heights).toEqual([
+    320,
+  ])
+  await user.click(screen.getByRole('button', { name: 'Generate code' }))
   await user.click(screen.getByRole('button', { name: 'Preview import' }))
   expect(await screen.findByText('Chart 1: RPM')).toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: 'Apply' }))
   expect(dispatch).toHaveBeenCalledWith({ type: 'replaceLayout', panels: [['RPM']] })
+
+  await user.keyboard('{Escape}')
+  expect(screen.queryByRole('dialog', { name: 'Graph profiles' })).not.toBeInTheDocument()
+  target.remove()
 })

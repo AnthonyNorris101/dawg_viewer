@@ -1,8 +1,9 @@
-import { validPanels } from './graphProfiles'
+import { MAX_PANEL_HEIGHT, MIN_PANEL_HEIGHT, validHeights, validPanels } from './graphProfiles'
 
 export interface Panel {
   id: number
   channelIds: string[]
+  heightPx?: number
 }
 
 export interface Layout {
@@ -12,16 +13,22 @@ export interface Layout {
 }
 
 export type LayoutAction =
-  | { type: 'replaceLayout'; panels: string[][] }
+  | { type: 'replaceLayout'; panels: string[][]; heights?: Array<number | null> }
   | { type: 'toggleChannel'; channelId: string }
   | { type: 'removeChannel'; panelId: number; channelId: string }
   | { type: 'addPanel' }
   | { type: 'removePanel'; panelId: number }
   | { type: 'setActive'; panelId: number }
+  | { type: 'resizePanel'; panelId: number; heightPx: number }
+  | { type: 'resetPanelSize'; panelId: number }
 
-export function makeLayout(panels: string[][]): Layout {
+export function makeLayout(panels: string[][], heights?: Array<number | null>): Layout {
   return {
-    panels: panels.map((channelIds, i) => ({ id: i + 1, channelIds })),
+    panels: panels.map((channelIds, i) => ({
+      id: i + 1,
+      channelIds,
+      ...(heights?.[i] ? { heightPx: heights[i] ?? undefined } : {}),
+    })),
     activeId: 1,
     nextId: panels.length + 1,
   }
@@ -39,7 +46,10 @@ function updatePanel(layout: Layout, panelId: number, fn: (ids: string[]) => str
 export function layoutReducer(layout: Layout, action: LayoutAction): Layout {
   switch (action.type) {
     case 'replaceLayout':
-      return validPanels(action.panels) ? makeLayout(action.panels) : layout
+      return validPanels(action.panels) &&
+        (action.heights === undefined || validHeights(action.heights, action.panels.length))
+        ? makeLayout(action.panels, action.heights)
+        : layout
     case 'toggleChannel':
       if (
         !layout.panels
@@ -72,5 +82,30 @@ export function layoutReducer(layout: Layout, action: LayoutAction): Layout {
     }
     case 'setActive':
       return layout.activeId === action.panelId ? layout : { ...layout, activeId: action.panelId }
+    case 'resizePanel':
+      return {
+        ...layout,
+        panels: layout.panels.map((panel) =>
+          panel.id === action.panelId
+            ? {
+                ...panel,
+                heightPx: Math.min(
+                  MAX_PANEL_HEIGHT,
+                  Math.max(MIN_PANEL_HEIGHT, Math.round(action.heightPx)),
+                ),
+              }
+            : panel,
+        ),
+      }
+    case 'resetPanelSize':
+      return {
+        ...layout,
+        panels: layout.panels.map((panel) => {
+          if (panel.id !== action.panelId || panel.heightPx === undefined) return panel
+          const next = { ...panel }
+          delete next.heightPx
+          return next
+        }),
+      }
   }
 }

@@ -4,6 +4,7 @@ import type { ChannelMeta } from '../../bindings/dawg_viewer/internal/config/mod
 import { mountPlot } from '../plot/mountPlot'
 import type { ViewSync } from '../plot/sync'
 import type { LayoutAction, Panel } from '../state/layout'
+import { PanelResizeHandle } from '../components/PanelResizeHandle'
 import { colorFor, store } from './connection'
 import { formatValue } from './format'
 
@@ -31,6 +32,7 @@ export const LivePlotPanel = memo(function LivePlotPanel({
   dispatch,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLElement>(null)
   const valueEls = useRef(new Map<string, HTMLSpanElement>())
 
   const namesKey = panel.channelIds.filter((n) => known.has(n)).join('\n')
@@ -78,7 +80,9 @@ export const LivePlotPanel = memo(function LivePlotPanel({
 
   return (
     <section
-      className={`flex min-h-48 flex-1 flex-col border-l-2 bg-zinc-950 ${
+      ref={panelRef}
+      style={panel.heightPx ? { flex: `0 0 ${panel.heightPx}px` } : undefined}
+      className={`relative flex min-h-48 w-full min-w-0 flex-1 flex-col overflow-hidden border-l-2 bg-zinc-950 ${
         active ? 'border-red-500' : 'border-transparent'
       }`}
       onPointerDown={() => dispatch({ type: 'setActive', panelId: panel.id })}
@@ -123,7 +127,7 @@ export const LivePlotPanel = memo(function LivePlotPanel({
         </button>
       </header>
 
-      <div className="relative min-h-0 flex-1">
+      <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
         {names.length === 0 ? (
           <p className="absolute inset-0 grid place-items-center text-sm text-zinc-600">
             {waiting.length > 0
@@ -134,6 +138,22 @@ export const LivePlotPanel = memo(function LivePlotPanel({
           <div ref={hostRef} className="absolute inset-0" />
         )}
       </div>
+      <PanelResizeHandle
+        panelId={panel.id}
+        index={index}
+        edge="top"
+        heightPx={panel.heightPx}
+        panelRef={panelRef}
+        dispatch={dispatch}
+      />
+      <PanelResizeHandle
+        panelId={panel.id}
+        index={index}
+        edge="bottom"
+        heightPx={panel.heightPx}
+        panelRef={panelRef}
+        dispatch={dispatch}
+      />
     </section>
   )
 })

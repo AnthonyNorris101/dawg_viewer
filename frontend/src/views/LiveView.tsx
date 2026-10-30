@@ -7,7 +7,7 @@ import { PinnedCards } from '../live/PinnedCards'
 import { StatusHeader } from '../live/StatusHeader'
 import { liveSync, resumeFollow, showWindow, useFollow } from '../live/follow'
 import { layoutReducer, makeLayout } from '../state/layout'
-import { toolbarButton, toolbarButtonActive } from '../ui'
+import { plotStack, toolbarButton, toolbarButtonActive } from '../ui'
 import { GraphProfileControls } from '../components/GraphProfileControls'
 
 const initialLayout = makeLayout([
@@ -27,7 +27,7 @@ const WINDOWS: [number, string][] = [
 const NO_CHANNELS: string[] = []
 const NO_METAS: Record<string, ChannelMeta | undefined> = {}
 
-export function LiveView() {
+export function LiveView({ profileTarget }: { profileTarget: HTMLElement | null }) {
   useEffect(startLive, [])
   const info = useInfo()
   const channels = useChannels()
@@ -53,13 +53,16 @@ export function LiveView() {
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden">
       <StatusHeader />
-      <GraphProfileControls
-        layout={layout}
-        dispatch={dispatch}
-        names={channels.map((c) => c.name)}
-        windowS={windowS}
-        onWindow={showWindow}
-      />
+      {profileTarget && (
+        <GraphProfileControls
+          target={profileTarget}
+          layout={layout}
+          dispatch={dispatch}
+          names={channels.map((c) => c.name)}
+          windowS={windowS}
+          onWindow={showWindow}
+        />
+      )}
       <div className="flex min-h-0 flex-1">
         <ChannelList
           channels={listChannels}
@@ -95,7 +98,7 @@ export function LiveView() {
               Add plot
             </button>
           </div>
-          <main className="flex min-h-0 flex-1 flex-col gap-px overflow-y-auto bg-zinc-800">
+          <main className={plotStack}>
             {layout.panels.map((panel, i) => (
               <LivePlotPanel
                 key={panel.id}

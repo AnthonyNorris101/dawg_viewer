@@ -3,6 +3,7 @@ import type { Session } from '../data/session'
 import { mountPlot } from '../plot/mountPlot'
 import type { ViewSync } from '../plot/sync'
 import type { LayoutAction, Panel } from '../state/layout'
+import { PanelResizeHandle } from './PanelResizeHandle'
 
 interface Props {
   panel: Panel
@@ -24,6 +25,7 @@ export const PlotPanel = memo(function PlotPanel({
   dispatch,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLElement>(null)
   const valueEls = useRef(new Map<string, HTMLSpanElement>())
 
   const channels = useMemo(
@@ -53,7 +55,9 @@ export const PlotPanel = memo(function PlotPanel({
 
   return (
     <section
-      className={`flex min-h-48 flex-1 flex-col border-l-2 bg-zinc-950 ${
+      ref={panelRef}
+      style={panel.heightPx ? { flex: `0 0 ${panel.heightPx}px` } : undefined}
+      className={`relative flex min-h-48 w-full min-w-0 flex-1 flex-col overflow-hidden border-l-2 bg-zinc-950 ${
         active ? 'border-red-500' : 'border-transparent'
       }`}
       onPointerDown={() => dispatch({ type: 'setActive', panelId: panel.id })}
@@ -98,7 +102,7 @@ export const PlotPanel = memo(function PlotPanel({
         </button>
       </header>
 
-      <div className="relative min-h-0 flex-1">
+      <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
         {channels.length === 0 ? (
           <p className="absolute inset-0 grid place-items-center text-sm text-zinc-600">
             Pick channels from the list to plot them here
@@ -107,6 +111,22 @@ export const PlotPanel = memo(function PlotPanel({
           <div ref={hostRef} className="absolute inset-0" />
         )}
       </div>
+      <PanelResizeHandle
+        panelId={panel.id}
+        index={index}
+        edge="top"
+        heightPx={panel.heightPx}
+        panelRef={panelRef}
+        dispatch={dispatch}
+      />
+      <PanelResizeHandle
+        panelId={panel.id}
+        index={index}
+        edge="bottom"
+        heightPx={panel.heightPx}
+        panelRef={panelRef}
+        dispatch={dispatch}
+      />
     </section>
   )
 })

@@ -1,4 +1,5 @@
 import uPlot from 'uplot'
+import { observeElementSize } from './observeSize'
 import type { ViewSync } from './sync'
 
 const FONT = '11px Inter, system-ui, sans-serif'
@@ -76,11 +77,11 @@ function clampShift(shift: number, min: number, max: number, xMin: number, xMax:
 export function mountPlot(host: HTMLElement, opts: PlotOptions): MountedPlot {
   const { series, sync } = opts
   const units = [...new Set(series.map((s) => s.unit))]
+  const initialSize = { width: host.clientWidth, height: host.clientHeight }
 
   const u = new uPlot(
     {
-      width: host.clientWidth,
-      height: host.clientHeight,
+      ...initialSize,
       legend: { show: false },
       padding: [null, units.length > 1 ? 0 : Y_AXIS_SIZE + Y_LABEL_SIZE, null, null],
       scales: { x: { time: false } },
@@ -132,16 +133,12 @@ export function mountPlot(host: HTMLElement, opts: PlotOptions): MountedPlot {
   )
   const unregister = sync.register(u)
 
-  const resize = new ResizeObserver(() => {
-    const { clientWidth: width, clientHeight: height } = host
-    if (width > 0 && height > 0) u.setSize({ width, height })
-  })
-  resize.observe(host)
+  const stopResize = observeElementSize(host, (size) => u.setSize(size), initialSize)
 
   return {
     u,
     destroy() {
-      resize.disconnect()
+      stopResize()
       unregister()
       u.destroy()
     },

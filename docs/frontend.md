@@ -98,10 +98,18 @@ widget (`ageColor` in `live/format.ts`).
 
 ## Layout (state/layout.ts)
 
-Layouts support five charts and fifteen channel entries total. The graph profile
-controls in Live and Viewer save named layouts in local storage. Default is built
-in; saved layouts can be replaced after confirmation or deleted. Profiles may
-also remember a finite Live time window.
+Layouts support five charts and fifteen channel entries total. The Profiles
+button beside the version opens all profile controls for the active Live or
+Viewer layout. Named profiles are stored locally; Default is built in, and saved
+layouts can be replaced after confirmation or deleted. Profiles may also remember
+a finite Live time window and custom plot heights.
+
+Plots have resize handles at the upper- and lower-right corners. Drag up from the
+upper handle or down from the lower handle to set a custom height, use the arrow
+keys while a handle is focused for precise changes, or press Home/double-click to
+return to automatic sizing. Custom heights stay
+local and are not included in offline share codes because pixel sizes are specific
+to a window and display.
 
 Offline sharing hashes exact UTF-8 channel names with SHA-256. Version 1 uses
 22-bit prefixes for caches up to 256 names, or 32-bit prefixes for larger caches.

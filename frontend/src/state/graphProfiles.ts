@@ -6,8 +6,11 @@ export const DEFAULT_PANELS = [
 export interface GraphProfile {
   name: string
   panels: string[][]
+  heights?: Array<number | null>
   windowS?: number
 }
+export const MIN_PANEL_HEIGHT = 192
+export const MAX_PANEL_HEIGHT = 2000
 const KEY = 'dawg.graph-profiles.v1'
 const CACHE = 'dawg.channel-names.v1'
 
@@ -21,6 +24,18 @@ export function validPanels(value: unknown): value is string[][] {
   )
 }
 
+export function validHeights(value: unknown, panelCount: number): value is Array<number | null> {
+  return (
+    Array.isArray(value) &&
+    value.length === panelCount &&
+    value.every(
+      (height) =>
+        height === null ||
+        (Number.isFinite(height) && height >= MIN_PANEL_HEIGHT && height <= MAX_PANEL_HEIGHT),
+    )
+  )
+}
+
 export function loadProfiles(): GraphProfile[] {
   try {
     const data: unknown = JSON.parse(localStorage.getItem(KEY) ?? '[]')
@@ -31,6 +46,7 @@ export function loadProfiles(): GraphProfile[] {
             typeof p.name === 'string' &&
             p.name.trim() &&
             validPanels(p.panels) &&
+            (p.heights === undefined || validHeights(p.heights, p.panels.length)) &&
             (p.windowS === undefined || (Number.isFinite(p.windowS) && p.windowS > 0)),
         )
       : []
