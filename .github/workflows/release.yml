@@ -38,8 +38,9 @@ jobs:
           go vet ./...
           go test -race ./...
 
-      - name: Frontend lint and format check
+      - name: Frontend tests, lint and format check
         run: |
+          npm --prefix frontend run test
           npm --prefix frontend run lint
           npm --prefix frontend run format:check
 

@@ -14,7 +14,7 @@ Elsewhere they run in `sh`.
   runs `wails3 dev`; when the app closes (or Ctrl+C) the simulator is stopped
   too, so no stray process keeps the ports.
 - `just sim` runs only the simulator.
-- `just test` runs Go vet and tests, then the frontend type check, lint and
+- `just test` runs Go vet and tests, then frontend tests, type check, lint and
   format check. `just test-race` adds the race detector (needs a C compiler).
 - `just bindings` regenerates `frontend/bindings` after changing Go services.
 
@@ -42,6 +42,9 @@ files as `logfile.Encode`. See [device-protocol.md](device-protocol.md).
   calibration, combined channels, unknown ids keeping the packet, command
   packets ignored, the sender filter, the name cache, and restarting on the
   same port.
+- `frontend/src`: Vitest tests cover telemetry history, live state, layout,
+  log loading, app navigation and Logs actions. Run them with
+  `npm --prefix frontend run test` or use `test:watch` while editing.
 
 `bindings/` is generated, so ESLint ignores it.
 
@@ -51,7 +54,7 @@ files as `logfile.Encode`. See [device-protocol.md](device-protocol.md).
 
 1. **Test** (Ubuntu): regenerates bindings and builds `frontend/dist` first —
    the Go program embeds it and won't compile without it — then Go vet and
-   race tests, frontend lint and format check.
+   race tests, frontend tests, lint and format check.
 2. **Build** on Windows, macOS and Linux runners in parallel (one failing
    doesn't stop the others):
    - Windows: installer (NSIS, installed with Chocolatey) and a portable zip;

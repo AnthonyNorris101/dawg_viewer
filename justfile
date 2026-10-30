@@ -31,7 +31,7 @@ sim *args:
 build-sim:
     go build -o bin/iltm-sim{{ if os_family() == "windows" { ".exe" } else { "" } }} ./cmd/iltm-sim
 
-# Run every test and check: Go tests, then frontend types, lint and formatting
+# Run every test and check: Go tests, then frontend tests, types, lint and formatting
 test: test-go test-web
 
 # Go tests only (pass a package to narrow it, e.g. `just test-go ./internal/live`)
@@ -43,8 +43,9 @@ test-go *pkgs="./...":
 test-race *pkgs="./...":
     go test -race {{ pkgs }}
 
-# Frontend type check, lint and formatting check
+# Frontend tests, type check, lint and formatting check
 test-web:
+    npm --prefix frontend run test
     npm --prefix frontend run typecheck
     npm --prefix frontend run lint
     npm --prefix frontend run format:check
