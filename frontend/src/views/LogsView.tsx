@@ -6,6 +6,7 @@ import { toolbarButton } from '../ui'
 
 interface Props {
   onOpen: (path: string) => void
+  opening?: boolean
 }
 
 const errorText = (e: unknown) => String(e instanceof Error ? e.message : e)
@@ -22,7 +23,7 @@ const KIND_LABEL: Record<string, string> = {
   bin: 'Raw .bin',
 }
 
-export function LogsView({ onOpen }: Props) {
+export function LogsView({ onOpen, opening = false }: Props) {
   const [folder, setFolder] = useState('')
   const [remote, setRemote] = useState<RemoteLog[] | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -130,6 +131,7 @@ export function LogsView({ onOpen }: Props) {
           <button
             type="button"
             className={toolbarButton}
+            disabled={opening}
             onClick={() =>
               run('', async () => {
                 const path = await LogService.PickFile()
@@ -142,9 +144,10 @@ export function LogsView({ onOpen }: Props) {
         </span>
       </div>
 
-      {(busy || error) && (
+      {(busy || opening || error) && (
         <div className="border-b border-zinc-800 bg-zinc-900/60 px-3 py-1 text-xs">
           {busy && <p className="text-sky-300">{progressText || busy}</p>}
+          {opening && !busy && <p className="text-sky-300">Opening log…</p>}
           {error && <p className="text-red-300">{error}</p>}
         </div>
       )}
@@ -261,6 +264,7 @@ export function LogsView({ onOpen }: Props) {
                       <button
                         type="button"
                         className="text-sky-300 hover:text-sky-100"
+                        disabled={opening}
                         onClick={() => onOpen(l.path)}
                       >
                         Open

@@ -33,9 +33,9 @@ export interface PlotOptions {
   data: uPlot.AlignedData
   sync: ViewSync
   bounds: () => [number, number] | null
-  minSpan: number
+  minSpan: number | (() => number)
   onCursor: (idx: number | null) => void
-  markers?: PlotMarker[]
+  markers?: PlotMarker[] | (() => PlotMarker[])
   plugins?: uPlot.Plugin[]
   ranges?: Record<string, [number, number]>
 }
@@ -68,7 +68,7 @@ export interface MountedPlot {
   destroy(): void
 }
 
-function wheelZoom(bounds: PlotOptions['bounds'], minSpan: number): uPlot.Plugin {
+function wheelZoom(bounds: PlotOptions['bounds'], minSpan: () => number): uPlot.Plugin {
   return {
     hooks: {
       ready(u) {
@@ -94,7 +94,7 @@ function wheelZoom(bounds: PlotOptions['bounds'], minSpan: number): uPlot.Plugin
               const factor = e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP
               nMin = Math.max(xMin, at - (at - min) * factor)
               nMax = Math.min(xMax, at + (max - at) * factor)
-              if (nMax - nMin < minSpan) return
+              if (nMax - nMin < minSpan()) return
             }
             u.setScale('x', { min: nMin, max: nMax })
           },
@@ -154,7 +154,7 @@ function axisZoom(
 const MARKER_STROKE = 'rgba(250, 204, 21, 0.55)'
 const MARKER_TEXT = '#facc15'
 
-function markerLines(markers: PlotMarker[]): uPlot.Plugin {
+function markerLines(markers: () => PlotMarker[]): uPlot.Plugin {
   return {
     hooks: {
       draw(u) {
@@ -172,7 +172,7 @@ function markerLines(markers: PlotMarker[]): uPlot.Plugin {
         ctx.setLineDash([4 * devicePixelRatio, 3 * devicePixelRatio])
         ctx.font = `${10 * devicePixelRatio}px Inter, system-ui, sans-serif`
         ctx.textBaseline = 'top'
-        for (const m of markers) {
+        for (const m of markers()) {
           if (m.x < min || m.x > max) continue
           const x = Math.round(u.valToPos(m.x, 'x', true)) + 0.5
           ctx.beginPath()
@@ -195,6 +195,7 @@ function clampShift(shift: number, min: number, max: number, xMin: number, xMax:
 
 export function mountPlot(host: HTMLElement, opts: PlotOptions): MountedPlot {
   const { series, sync } = opts
+  const minSpan = () => (typeof opts.minSpan === 'function' ? opts.minSpan() : opts.minSpan)
   const units = [...new Set(series.map((s) => s.unit))]
   const manualY = new Map<string, [number, number]>()
   let spikeFree = false
@@ -257,9 +258,11 @@ export function mountPlot(host: HTMLElement, opts: PlotOptions): MountedPlot {
         })),
       ],
       plugins: [
-        wheelZoom(opts.bounds, opts.minSpan),
+        wheelZoom(opts.bounds, minSpan),
         axisZoom(units, manualY, () => refitY()),
-        ...(opts.markers?.length ? [markerLines(opts.markers)] : []),
+        markerLines(() =>
+          typeof opts.markers === 'function' ? opts.markers() : (opts.markers ?? []),
+        ),
         ...(opts.plugins ?? []),
       ],
       hooks: {
@@ -312,7 +315,7 @@ export function mountPlot(host: HTMLElement, opts: PlotOptions): MountedPlot {
       const { min, max } = u.scales.x
       const b = opts.bounds()
       if (min == null || max == null || !b) return
-      const half = Math.max(((max - min) / 2) * factor, opts.minSpan / 2)
+      const half = Math.max(((max - min) / 2) * factor, minSpan() / 2)
       const mid = (min + max) / 2
       let lo = mid - half
       let hi = mid + half

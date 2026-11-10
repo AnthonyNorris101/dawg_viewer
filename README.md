@@ -120,7 +120,7 @@ just install      # download Go and frontend dependencies
 just run          # run the app with hot reload
 just simulate     # run the app fed by fake logger data, e.g. just simulate -rate 20
 just sim          # fake logger data only (for an app that's already running)
-just test         # Go tests + frontend type check, lint and format check
+just test         # Go vet/tests + frontend tests, types, lint and formatting
 just build        # build for this OS into bin/
 ```
 
@@ -139,7 +139,8 @@ on Windows, macOS and Linux runners, then publishes a GitHub release tagged
 - Linux: `.deb`, `.rpm`, AppImage and portable `.tar.gz`
 
 The portable downloads include a `dawg_config` folder next to the app. Pull
-requests are tested and built but not released.
+requests run the test job, including the frontend build; platform packaging runs
+for non-PR events. Pull requests are not released.
 
 To release a new version, set it and push to `main`:
 

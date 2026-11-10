@@ -6,15 +6,17 @@ React + TypeScript + Tailwind, built with Vite, plots drawn with uPlot.
 src/App.tsx        tabs (Live / Logs / Viewer / Car / Settings)
 src/live/          live view: connection, store, follow mode, cards, plots, status bar
 src/views/         LiveView, LogsView, ViewerView, CarView, SettingsView
-src/viewer/        turning a loaded log into a viewer session
+src/viewer/        pure session analysis plus focused React controllers
 src/plot/          uPlot wrapper and shared plot view state
 src/components/    channel list and viewer plot panel
-src/state/         plot layout reducer
-src/data/          viewer session type and shared colours
+src/state/         persistence, analysis settings, workbook/layout reducers, panel metadata
+src/data/          session types, zero-copy column construction, calibration and sensor data
 ```
 
 Settings provides a Live plot layout choice. Default keeps the vertical stack;
-Bento packs Live plots and the optional track map into a compact two-column grid.
+Bento places Live plots and the optional track map in a two-column grid.
+Items have independent width/height choices and can be dragged into explicit
+row/column slots, including empty cells; compatible saved slots are retained.
 Returning to Default stacks plots in visible grid order, reading left to right,
 then top to bottom. Viewer worksheets are independent of this choice.
 
@@ -130,8 +132,8 @@ the last panel empties it instead, so there's always one.
 
 ## Tabs (App.tsx)
 
-Views stay mounted and are hidden with CSS, so live data and plot layouts
-survive tab switches.
+Live and Viewer stay mounted and are hidden with CSS, preserving their data
+and layouts across tab switches. Logs, Car, and Settings mount only while selected.
 
 ## Logs tab (views/LogsView.tsx)
 
@@ -139,13 +141,16 @@ Two lists: logs on the logger (Connect, Download selected, Download latest,
 Done) and files in the logs folder (Open, and Convert for `.bin`). The view is
 only mounted while its tab is open: opening it loads the local list, and
 closing it calls `FinishRemote` so the logger starts recording again.
-Download progress comes from `logs:progress` events.
+Download progress comes from `logs:progress` events. App owns a synchronous
+in-flight guard for log opening, shared by the Logs tab, Viewer file picker,
+setups, and reloads. While it is held, the Logs tab disables its local Open
+buttons and shows an opening status; additional open requests are ignored.
 
 ## Viewer tab
 
-`viewer/openLog.ts` loads a file through `LogService.Load`, fetches its
+`viewer/openLog.ts` is the Wails/fetch adapter. It loads through `LogService.Load`, fetches its
 `dataUrl` once as an `ArrayBuffer`, and builds a `Session` whose columns are
-`Float64Array` views straight into that buffer (no copying) (units and precision come from the current device profile when the
+`Float64Array` views straight into that buffer using `data/columns.ts` (no copying) (units and precision come from the current device profile when the
 names match). `ViewerView` remounts per file. Opening a log from the Logs tab
 switches to the Viewer.
 
@@ -553,3 +558,39 @@ minutes highlighted, and lap times from the same start/finish beacon as the
 Viewer. The map draws raw GPS (no gap filling). Lap timing only looks at rows newer than the last one it checked
 (found by time, since the store drops old rows), so it costs nothing per
 frame. The map re-fits the track as it grows until you zoom or pan.
+
+## Viewer module boundaries
+
+- `data/columns.ts` constructs a Session from Float64 columns and explicit metadata.
+  It imports neither Wails services nor the live connection. Test mode uses the
+  same constructor. Its caller owns the buffer and keeps it immutable.
+- `analysis/settings.ts` defines track/lap settings independently of persisted
+  stores. `state/analysis.ts` owns their current values and React subscriptions.
+- `viewer/analysis.ts` contains pure stages for fusion, distance, laps/runs,
+  derived channels, and math. All data and settings are arguments.
+- `viewer/useAnalysis.ts` subscribes to settings and memoizes these stages. The
+  view passes active-profile metadata explicitly. Numeric dependencies use the
+  effective units; cosmetic changes apply display metadata without recalculating
+  distance, laps, or math. Unit changes invalidate the affected analysis.
+- `viewer/useViewerWorkbook.ts` owns workbook initialization, persistence, layout
+  dispatch, and setup notifications.
+- `viewer/useViewerNavigation.ts` owns lap selection, overlay/time views,
+  synchronization, pending zooms, and live following.
+- `viewer/useRecalibration.ts` owns per-session CSV column overrides and the raw
+  log reload decision. Reloading a session discards its temporary overrides.
+- `state/panels.ts` supplies the panel kinds and toolbar labels/help. Layout and
+  saved-workbook validation share those kinds; panel rendering remains explicit
+  in ViewerView so each panel's distinct inputs are visible.
+
+`PlotPanel` distinguishes series structure from sample data. Data-only updates
+call the existing mounted plot's `update`, preserving manual y zoom and observers.
+Changes to channel identity, scale, title, colour, dash, or synchronization rebuild
+the plot. Bounds, minimum span, markers, and cursor values read the latest view,
+so they do not capture a stale live snapshot.
+
+`live/snapshot.ts` builds immutable Viewer snapshots from an injected LiveStore.
+`live/liveSession.ts` supplies the application's connection state. App still
+refreshes once a second only while watching in the visible Viewer tab. No sample
+revision change means no new snapshot; metadata-only changes reuse numeric buffers.
+Each changed sample batch is still copied in full, appropriate to the usual
+five-minute session. Longer retained histories remain supported by existing settings.

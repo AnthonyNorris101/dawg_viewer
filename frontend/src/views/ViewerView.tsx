@@ -1,9 +1,5 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
-import { buildOverlay } from '../analysis/overlay'
-import type { Lap } from '../analysis/track'
-import type { Calibration } from '../../bindings/dawg_viewer/internal/config/models'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChannelEditor } from '../components/ChannelEditor'
-import { applyCal, inverter } from '../data/calibration'
 import { ChannelList } from '../components/ChannelList'
 import { FilterDialog, type FilterStart } from '../components/FilterDialog'
 import { parseFilter } from '../analysis/filters'
@@ -12,7 +8,7 @@ import { AeroPanel } from '../components/AeroPanel'
 import { LaunchPanel } from '../components/LaunchPanel'
 import { MathEditor } from '../components/MathEditor'
 import { PlotPanel } from '../components/PlotPanel'
-import { Sidebar, type LapSelection } from '../components/Sidebar'
+import { Sidebar } from '../components/Sidebar'
 import { SpectrumPanel } from '../components/SpectrumPanel'
 import { RangeBar } from '../components/RangeBar'
 import { StatusBar } from '../components/StatusBar'
@@ -20,21 +16,17 @@ import { TrackMapPanel } from '../components/TrackMapPanel'
 import { WorksheetTabs } from '../components/WorksheetTabs'
 import { XYPanel } from '../components/XYPanel'
 import type { Channel, Session } from '../data/session'
-import { createViewSync } from '../plot/sync'
 import { mathDefs, useTrack } from '../state/analysis'
-import type { LayoutAction, PanelKind } from '../state/layout'
-import { applySetup, currentSetup, onWorkbook, WORKBOOK_KEY } from '../state/setup'
-import { download, load, pickTextFile, save } from '../state/storage'
-import {
-  activeSheet,
-  defaultWorkbook,
-  validWorkbook,
-  workbookReducer,
-  type Workbook,
-} from '../state/workbook'
+import { applySetup, currentSetup } from '../state/setup'
+import { download, pickTextFile } from '../state/storage'
+import { defaultWorkbook } from '../state/workbook'
 import { toolbarButton, toolbarButtonActive } from '../ui'
-import { useAnalysis } from '../viewer/analysis'
-import { distanceView, timeView } from '../viewer/xview'
+import { useAnalysis } from '../viewer/useAnalysis'
+import { useViewerWorkbook } from '../viewer/useViewerWorkbook'
+import { useViewerNavigation } from '../viewer/useViewerNavigation'
+import { useRecalibration } from '../viewer/useRecalibration'
+import { useInfo } from '../live/connection'
+import { PANEL_TYPES } from '../state/panels'
 
 const NO_CHANNELS: string[] = []
 
@@ -109,16 +101,6 @@ export function ViewerView({
   )
 }
 
-const ADD: [PanelKind, string, string][] = [
-  ['time', 'Plot', 'Channels against time (or lap distance when overlaying)'],
-  ['xy', 'XY', 'One channel against another, e.g. a G-G diagram'],
-  ['histogram', 'Histogram', 'How much of the time a channel spends at each value'],
-  ['map', 'Track map', 'GPS track coloured by a channel'],
-  ['spectrum', 'Spectrum', 'Frequency content (FFT) of channels, e.g. dampers or accelerometers'],
-  ['launch', 'Launch', 'Launches: acceleration against the traction-limit target, and wheel slip'],
-  ['aero', 'Aero', 'Grip against speed, compared with what the tyres and the aero should give'],
-]
-
 function LoadedLog({
   session: loaded,
   loading,
@@ -133,120 +115,30 @@ function LoadedLog({
   onOpenFile: () => void
   onReload?: () => void
 } & LiveProps) {
-  const [recal, setRecal] = useState<{ session: Session; data: Map<string, Float64Array> } | null>(
-    null,
-  )
-  const base = useMemo(() => {
-    if (!recal || recal.session !== loaded) return loaded
-    const channels = loaded.channels.map((c) => {
-      const data = recal.data.get(c.id)
-      return data ? { ...c, data } : c
-    })
-    return { ...loaded, channels, byId: new Map(channels.map((c) => [c.id, c])) }
-  }, [loaded, recal])
-  const analysis = useAnalysis(base)
+  const [notice, setNotice] = useState('')
+  const { base, recalibrate } = useRecalibration(loaded, setNotice, onReload)
+  const analysis = useAnalysis(base, useInfo()?.channels ?? undefined)
   const { session, laps, gps, distance } = analysis
   const track = useTrack()
 
-  const [workbook, dispatchWb] = useReducer(
-    workbookReducer,
-    null,
-    () =>
-      load<Workbook | null>(WORKBOOK_KEY, null, (v): v is Workbook => validWorkbook(v)) ??
-      defaultWorkbook(new Set(base.channels.map((c) => c.id)), gps != null),
+  const { workbook, dispatchWb, sheet, layout, activePanel, dispatch } = useViewerWorkbook(
+    base,
+    gps != null,
   )
-  useEffect(() => {
-    save(WORKBOOK_KEY, workbook)
-  }, [workbook])
-  const fresh = useCallback(
-    () => defaultWorkbook(new Set(base.channels.map((c) => c.id)), gps != null),
-    [base, gps],
-  )
-  useEffect(
-    () =>
-      onWorkbook((wb) => {
-        dispatchWb({ type: 'replace', workbook: wb ?? fresh() })
-      }),
-    [fresh],
-  )
-  const sheet = activeSheet(workbook)
-  const layout = sheet.layout
-  const activePanel = layout.panels.find((p) => p.id === layout.activeId)
-  const dispatch = useCallback((action: LayoutAction) => dispatchWb({ type: 'layout', action }), [])
-
-  const [selection, setSelection] = useState<LapSelection>({ keys: [], refKey: '' })
-  const [overlayOn, setOverlayOn] = useState(false)
-  const shown = useMemo(() => {
-    const picked = laps.filter((l) => selection.keys.includes(l.key))
-    const ref = picked.find((l) => l.key === selection.refKey) ?? picked[0]
-    return ref ? [ref, ...picked.filter((l) => l !== ref)] : []
-  }, [laps, selection])
-  const overlay = useMemo(
-    () =>
-      overlayOn && distance && shown.length > 0
-        ? buildOverlay(base.time, distance, shown, track.normalize)
-        : null,
-    [overlayOn, distance, shown, base.time, track.normalize],
-  )
-
-  const tView = useMemo(() => timeView(base.time, laps), [base.time, laps])
-  const dView = useMemo(() => (overlay ? distanceView(overlay) : null), [overlay])
-  const view = dView ?? tView
-  const sync = useMemo(() => createViewSync(dView ? 'viewer-distance' : 'viewer-time'), [dView])
-
-  const pendingZoom = useRef<Lap | null>(null)
-  const pendingRange = useRef<{ min: number; max: number } | null>(null)
-  useEffect(() => {
-    const lap = pendingZoom.current
-    const range = pendingRange.current
-    pendingZoom.current = null
-    pendingRange.current = null
-    if (lap && view.mode === 'time') sync.setRange({ min: lap.t0, max: lap.t1 })
-    else if (range && view.mode === 'time') sync.setRange(range)
-    else sync.setRange({ min: view.bounds[0], max: view.bounds[1] })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sync])
-
-  const isLive = loaded.source === 'live'
-  const [follow, setFollow] = useState(true)
-  const ownRange = useRef(false)
-  const liveEnd = useRef(0)
-  const lastStart = useRef(0)
-  useEffect(() => {
-    if (!isLive || view.mode !== 'time') return
-    const [b0, b1] = view.bounds
-    liveEnd.current = b1
-    const cur = sync.range()
-    const fromStart = !cur || cur.min <= lastStart.current + 1e-6
-    lastStart.current = b0
-    if (!follow) return
-    const span = cur ? Math.min(cur.max - cur.min, b1 - b0) : b1 - b0
-    ownRange.current = true
-    sync.setRange(fromStart ? { min: b0, max: b1 } : { min: Math.max(b0, b1 - span), max: b1 })
-    ownRange.current = false
-  }, [isLive, follow, view, sync])
-  useEffect(() => {
-    if (!isLive) return
-    return sync.onRange((r) => {
-      if (!ownRange.current && r.max < liveEnd.current - 0.25) setFollow(false)
-    })
-  }, [isLive, sync])
-
-  const resetZoom = () => sync.setRange({ min: view.bounds[0], max: view.bounds[1] })
-  const zoomTo = (min: number, max: number) => {
-    if (view.mode === 'time') sync.setRange({ min, max })
-    else {
-      pendingRange.current = { min, max }
-      setOverlayOn(false)
-    }
-  }
-  const zoomLap = (lap: Lap) => {
-    if (view.mode === 'time') sync.setRange({ min: lap.t0, max: lap.t1 })
-    else {
-      pendingZoom.current = lap
-      setOverlayOn(false)
-    }
-  }
+  const {
+    selection,
+    setSelection,
+    overlayOn,
+    setOverlayOn,
+    dView,
+    view,
+    sync,
+    follow,
+    setFollow,
+    resetZoom,
+    zoomTo,
+    zoomLap,
+  } = useViewerNavigation(base, laps, distance, track.normalize)
 
   const listChannels = useMemo(
     () => (dView ? [...session.channels, analysis.timeSlip] : session.channels),
@@ -289,33 +181,10 @@ function LoadedLog({
     const i = lastSample.current
     return ch && i >= 0 && i < ch.data.length ? ch.data[i] : undefined
   }, [editing, session])
-  const recalibrate = (before: Calibration | undefined, after: Calibration | null) => {
-    const id = editing
-    const ch = id ? base.byId.get(id) : undefined
-    if (!id || !ch) return
-    if (base.source !== 'wide') {
-      onReload?.()
-      return
-    }
-    const inv = inverter(before)
-    if (!inv) {
-      setNotice(`Saved. Reopen the original .bin log to see ${id} with the new calibration.`)
-      return
-    }
-    const data = ch.data.map((v) => applyCal(inv(v) ?? NaN, after))
-    setRecal((r) => ({
-      session: loaded,
-      data: new Map([...(r && r.session === loaded ? r.data : []), [id, data]]),
-    }))
-    setNotice(`Recalibrated ${id} in this log`)
-  }
-
   const viewBounds = useCallback((): [number, number] => view.bounds, [view])
   const markerXs = useMemo(() => view.markers.map((m) => m.x), [view])
   const [showSide, setShowSide] = useState(true)
   const [showMath, setShowMath] = useState(false)
-  const [notice, setNotice] = useState('')
-
   const exportSetup = () => {
     download('dawg-viewer-setup.json', JSON.stringify({ ...currentSetup(), workbook }, null, 2))
   }
@@ -331,22 +200,7 @@ function LoadedLog({
   }
   const deleteChannel = (id: string) => {
     mathDefs.set(mathDefs.get().filter((d) => d.name !== id))
-    dispatchWb({
-      type: 'replace',
-      workbook: {
-        ...workbook,
-        sheets: workbook.sheets.map((sh) => ({
-          ...sh,
-          layout: {
-            ...sh.layout,
-            panels: sh.layout.panels.map((p) => ({
-              ...p,
-              channelIds: p.channelIds.filter((c) => c !== id),
-            })),
-          },
-        })),
-      },
-    })
+    dispatchWb({ type: 'removeChannel', channelId: id })
     setNotice(`Deleted ${id}`)
   }
   const resetSheets = () =>
@@ -395,7 +249,7 @@ function LoadedLog({
           )
         )}
         <span className="ml-2 text-xs text-zinc-500">Add</span>
-        {ADD.map(([kind, label, title]) => (
+        {PANEL_TYPES.map(([kind, label, title]) => (
           <button
             key={kind}
             type="button"
@@ -587,7 +441,7 @@ function LoadedLog({
           currentValue={cursorValue}
           valueSource="Value at the cursor"
           onClose={() => setEditing(null)}
-          onSaved={recalibrate}
+          onSaved={(before, after) => recalibrate(editing, before, after)}
         />
       )}
       {filtering && (

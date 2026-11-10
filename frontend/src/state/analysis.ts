@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import type { MathDef } from '../analysis/math'
-import type { Beacon, SpeedUnit } from '../analysis/track'
+import type { Beacon } from '../analysis/track'
+import type { LapMode, TrackSettings } from '../analysis/settings'
 import { isObject, persisted } from './storage'
 
 export const validMath = (v: unknown): v is MathDef[] =>
@@ -42,22 +43,8 @@ export const DEFAULT_MATH: MathDef[] = [
 export const mathDefs = persisted<MathDef[]>('math.v1', DEFAULT_MATH, validMath)
 export const useMathDefs = () => useSyncExternalStore(mathDefs.subscribe, mathDefs.get)
 
-export type LapMode = 'loop' | 'gates' | 'launch' | 'manual'
+export type { LapMode, TrackSettings } from '../analysis/settings'
 export const LAP_MODES: LapMode[] = ['loop', 'gates', 'launch', 'manual']
-
-export interface TrackSettings {
-  lapMode?: LapMode
-  finish?: Beacon | null
-  runLength?: number
-  beacon: Beacon | null
-  radius: number
-  minLap: number
-  distance: 'auto' | 'gps' | 'speed'
-  speedChannel: string
-  speedUnit: SpeedUnit | 'auto'
-  normalize: boolean
-  fuse: boolean
-}
 
 export const DEFAULT_TRACK: TrackSettings = {
   beacon: null,

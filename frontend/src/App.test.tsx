@@ -20,8 +20,20 @@ vi.mock('./views/LiveView', () => ({
   LiveView: ({ layoutMode }: { layoutMode: string }) => <div>Live dashboard: {layoutMode}</div>,
 }))
 vi.mock('./views/LogsView', () => ({
-  LogsView: ({ onOpen }: { onOpen: (path: string) => void }) => (
-    <button onClick={() => onOpen('run.csv')}>Open downloaded log</button>
+  LogsView: ({ onOpen, opening }: { onOpen: (path: string) => void; opening: boolean }) => (
+    <>
+      <button disabled={opening} onClick={() => onOpen('run.csv')}>
+        Open downloaded log
+      </button>
+      <button
+        onClick={() => {
+          onOpen('first.csv')
+          onOpen('second.csv')
+        }}
+      >
+        Open two logs
+      </button>
+    </>
   ),
 }))
 vi.mock('./views/ViewerView', () => ({
@@ -33,7 +45,9 @@ vi.mock('./views/ViewerView', () => ({
   ),
 }))
 
-beforeEach(() => vi.mocked(openLog).mockReset())
+beforeEach(() => {
+  vi.mocked(openLog).mockReset()
+})
 
 describe('App navigation', () => {
   it('opens the empty Settings page and returns to the mounted Live view', async () => {
@@ -76,5 +90,36 @@ describe('App navigation', () => {
     await user.click(screen.getByRole('button', { name: 'Open downloaded log' }))
     expect(await screen.findByText('run.csv')).toBeInTheDocument()
     expect(openLog).toHaveBeenCalledWith('run.csv')
+  })
+
+  it('ignores another open request while a log is loading', async () => {
+    const user = userEvent.setup()
+    const loadedSession = {
+      name: 'first.csv',
+      path: 'first.csv',
+      note: '',
+      sampleRate: 0,
+      time: new Float64Array(),
+      channels: [],
+      byId: new Map(),
+    }
+    let finish!: () => void
+    vi.mocked(openLog).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve(loadedSession)
+        }),
+    )
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: 'Logs' }))
+    await user.click(screen.getByRole('button', { name: 'Open two logs' }))
+    expect(openLog).toHaveBeenCalledTimes(1)
+    expect(openLog).toHaveBeenCalledWith('first.csv')
+    expect(screen.getByRole('button', { name: 'Open downloaded log' })).toBeDisabled()
+
+    finish()
+    expect(await screen.findByText('first.csv')).toBeInTheDocument()
+    expect(openLog).toHaveBeenCalledTimes(1)
   })
 })

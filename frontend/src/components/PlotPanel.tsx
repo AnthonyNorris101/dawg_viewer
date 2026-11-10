@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, type Dispatch } from 'react'
 import { channelTitle, type Session } from '../data/session'
-import { mountPlot, type MountedPlot } from '../plot/mountPlot'
+import { mountPlot, type MountedPlot, type PlotSeries } from '../plot/mountPlot'
 import type { ViewSync } from '../plot/sync'
 import type { LayoutAction, Panel } from '../state/layout'
 import type { XView } from '../viewer/xview'
@@ -42,23 +42,34 @@ export const PlotPanel = memo(function PlotPanel({
   )
   const series = useMemo(() => view.series(channels), [view, channels])
 
+  const latest = useRef({ view, series })
+  useEffect(() => {
+    latest.current = { view, series }
+  }, [view, series])
+  const seriesKey = JSON.stringify(
+    series.map((s) => ({
+      key: s.key,
+      name: s.label,
+      unit: s.channel.unit || channelTitle(s.channel),
+      color: s.color,
+      dash: s.dash,
+    })),
+  )
+  const structure = useMemo(() => JSON.parse(seriesKey) as PlotSeries[], [seriesKey])
+
   useEffect(() => {
     const host = hostRef.current
-    if (!host || series.length === 0) return
+    if (!host || structure.length === 0) return
+    const { view, series } = latest.current
     const plot = mountPlot(host, {
-      series: series.map((s) => ({
-        name: s.label,
-        unit: s.channel.unit || channelTitle(s.channel),
-        color: s.color,
-        dash: s.dash,
-      })),
+      series: structure,
       data: [view.x as number[], ...series.map((s) => s.data as (number | null)[])],
       sync,
-      bounds: () => view.bounds,
-      minSpan: view.minSpan,
-      markers: view.markers,
+      bounds: () => latest.current.view.bounds,
+      minSpan: () => latest.current.view.minSpan,
+      markers: () => latest.current.view.markers,
       onCursor: (idx) => {
-        for (const s of series) {
+        for (const s of latest.current.series) {
           const el = valueEls.current.get(s.key)
           if (!el) continue
           const v = idx == null ? null : s.data[idx]
@@ -71,12 +82,16 @@ export const PlotPanel = memo(function PlotPanel({
       plotRef.current = null
       plot.destroy()
     }
-  }, [series, view, sync])
+  }, [structure, sync])
+
+  useEffect(() => {
+    plotRef.current?.update([view.x as number[], ...series.map((s) => s.data as (number | null)[])])
+  }, [series, view])
 
   const spikeFree = !panel.fullY
   useEffect(() => {
     plotRef.current?.setSpikeFree(spikeFree)
-  }, [spikeFree, series, view, sync])
+  }, [spikeFree, structure, sync])
 
   const missing = panel.channelIds.length - channels.length
 

@@ -2,8 +2,8 @@
 
 Dawg Viewer is one desktop program with two halves:
 
-- a **Go backend** that does all networking, decoding and state, and
-- a **React frontend** that only displays.
+- a **Go backend** that owns networking, decoding, device configuration, and log loading, and
+- a **React frontend** that owns viewer state, numerical analysis, and rendering.
 
 They talk through Wails: the frontend calls Go methods, and Go pushes events
 to the frontend.
@@ -61,7 +61,8 @@ From wire to screen, data takes these shapes:
 
 ## What runs in the backend
 
-`services.LiveService` is the only thing the frontend talks to. It owns one
+`services.LiveService` handles device/configuration calls and saved setups.
+`services.LogService` handles downloads, conversion, and opening logs. LiveService owns one
 `live.Session` at a time, for the selected device profile; switching devices
 stops the session (freeing port 5002) before starting the next.
 
@@ -79,9 +80,10 @@ profile's device, decode it, ignore commands, learn names, build the row. It
 also emits a frame every 1/frame_rate s, a status every 0.5 s, and saves the
 name cache every 2 s if it changed.
 
-The backend keeps **no history**: only the latest value per channel (needed
+The live backend keeps **no telemetry history**: only the latest value per channel (needed
 to rebuild the GPS values), the name table and rows not yet sent. Its memory
-stays flat however long it runs.
+stays bounded by the live pipeline. Separately, opening a log retains a loaded
+table in `internal/logdata` until its one-time URL is fetched.
 
 ## How backend and frontend talk
 
@@ -134,13 +136,16 @@ over and never touched again, or copied.
     `Ignored` slices.
   - The listener reads into one reusable 64 KB buffer, so it copies each
     packet's bytes before passing them on.
-- **Only two mutexes**, where state really is shared:
+- **Synchronization boundaries**, where state is shared:
   - `Session.mu` — the frontend can call `Status()` and `Channels()` at any
     time from Wails' goroutines; the hub stores a copy under the lock and
     those calls read the copy.
   - `LiveService.mu` — makes `Connect`, `Disconnect` and `Reload` run one at
     a time, so two quick clicks can't start two sessions or fight over the
     port.
+  - `LogService.mu` tracks remote file-server ownership; `logdata.Store.mu`
+    protects pending one-time table transfers. The table is removed under the
+    lock before encoding, so only one request can claim it.
 - **The frontend needs none of this**: JavaScript is single-threaded, so each
   event is handled to completion before the next.
 
@@ -148,11 +153,25 @@ The race detector runs in the tests and CI (`just test-race`).
 
 ## Memory
 
-The live chart history is capped at `history_minutes × 60 × 60` rows (108,000
-at the default 30 minutes; about 50 MB with the ILTM's ~55 channels). When it
-fills, the oldest quarter is dropped. The cap is by rows, so a faster device
-gets less time in the same memory. In a 20× speed test (≈980 packets/s) the
-frontend heap levelled off around 45 MB and the backend around 140 MB.
+Live sessions usually contain five minutes or less of continuous data. At 50 Hz
+with 60 channels plus time, five minutes represents about 7.32 MB of Float64
+samples, before capacity overhead and derived channels. This is a workload
+assumption, not a new retention limit. The configured row cap remains
+`history_minutes × 60 × 60` (108,000 rows at the default 30 minutes); filling it
+drops the oldest quarter.
+
+The Live tab reads mutable store views directly. Watching live data in the Viewer
+publishes an immutable snapshot at most once a second while that tab is visible.
+A store revision prevents copies and analysis when no rows changed. Metadata-only
+snapshot updates reuse the existing sample buffers.
+
+CSV logs can be much larger. `logfile.Table.WriteColumns` sends a loaded table in
+64 KiB chunks instead of allocating a second complete encoded matrix in Go.
+The browser still fetches one full ArrayBuffer and creates zero-copy Float64
+column views. Parsing, sorting, normalization, and frontend analysis remain
+in-memory; streaming the transfer does not make arbitrarily large files cheap.
+See [modularity.md](modularity.md) for the module boundaries and measured encoder
+allocation comparison.
 
 ## Timing: device clock vs arrival time
 

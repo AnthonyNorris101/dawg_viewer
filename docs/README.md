@@ -10,3 +10,5 @@ The code is kept free of comments; the reasoning behind it lives here.
 | [configuration.md](configuration.md) | The config folder, settings and device profiles |
 | [device-protocol.md](device-protocol.md) | What a device (ILTM, UNO Q) must send for the app to read it |
 | [development.md](development.md) | just commands, the simulator, tests, CI and releases |
+| [modularity.md](modularity.md) | Module ownership, live/CSV workload assumptions, and encoder benchmark evidence |
+| [dev_2.md](dev_2.md) | Current branch behavior, including Settings and Live bento layout |

@@ -1,14 +1,11 @@
-import { useMemo } from 'react'
 import { fusePosition, type Fusion } from '../analysis/fusion'
-import { computeAll } from '../analysis/math'
+import { computeAll, type MathDef } from '../analysis/math'
 import {
-  beaconCrossings,
   buildLaps,
   buildRuns,
   pairGates,
   runEnd,
   cumulativeDistance,
-  findGps,
   findSpeed,
   guessSpeedUnit,
   lapColumns,
@@ -21,15 +18,8 @@ import {
 import type { ChannelMeta } from '../../bindings/dawg_viewer/internal/config/models'
 import { defaultGroup } from '../data/groups'
 import { CHANNEL_COLORS, type Channel, type Session } from '../data/session'
-import { useInfo } from '../live/connection'
 import { findLaunches, speedFromDistance } from '../analysis/launch'
-import {
-  useLaunchMarks,
-  useMathDefs,
-  useSplits,
-  useTrack,
-  type TrackSettings,
-} from '../state/analysis'
+import type { LapMode, TrackSettings } from '../analysis/settings'
 
 export const TIMESLIP_ID = '__timeslip'
 
@@ -48,7 +38,7 @@ export interface Analysis {
 export function resolveDistanceSource(
   channels: Channel[],
   gps: Gps | null,
-  t: TrackSettings,
+  t: Pick<TrackSettings, 'distance' | 'speedChannel' | 'speedUnit'>,
 ): { source: DistanceSource; label: string } | null {
   const speed = (): { source: DistanceSource; label: string } | null => {
     const ch =
@@ -91,160 +81,123 @@ export function withMeta(
   return { ...session, channels, byId: new Map(channels.map((c) => [c.id, c])) }
 }
 
-export function useAnalysis(raw: Session): Analysis {
-  const metas = useInfo()?.channels ?? undefined
-  const base = useMemo(() => withMeta(raw, metas), [raw, metas])
-  const track = useTrack()
-  const splitsByPath = useSplits()
-  const defs = useMathDefs()
-  const splitTimes = splitsByPath[raw.path]
+export function positionFusion(
+  base: Session,
+  rawGps: Gps | null,
+  track: Pick<TrackSettings, 'fuse' | 'speedChannel' | 'speedUnit'>,
+) {
+  if (!rawGps || !track.fuse) return null
+  const byName = (...names: string[]) =>
+    names.map((n) => base.channels.find((c) => c.name.toLowerCase() === n)).find(Boolean)
+  const sp = (track.speedChannel && base.byId.get(track.speedChannel)) || findSpeed(base.channels)
+  const k = sp ? TO_MPS[track.speedUnit === 'auto' ? guessSpeedUnit(sp.unit) : track.speedUnit] : 1
+  return fusePosition({
+    time: base.time,
+    lat: rawGps.lat,
+    lon: rawGps.lon,
+    speed: sp ? Float64Array.from(sp.data, (v) => v * k) : undefined,
+    yaw: byName('yaw', 'heading', 'yawangle', 'course')?.data,
+    latAccel: byName('accely', 'acc_y', 'latacc')?.data,
+  })
+}
 
-  const rawGps = useMemo(() => findGps(base.channels), [base])
-  const fusion = useMemo(() => {
-    if (!rawGps || !track.fuse) return null
-    const byName = (...names: string[]) =>
-      names.map((n) => base.channels.find((c) => c.name.toLowerCase() === n)).find(Boolean)
-    const sp = (track.speedChannel && base.byId.get(track.speedChannel)) || findSpeed(base.channels)
-    const k = sp
-      ? TO_MPS[track.speedUnit === 'auto' ? guessSpeedUnit(sp.unit) : track.speedUnit]
-      : 1
-    return fusePosition({
-      time: base.time,
-      lat: rawGps.lat,
-      lon: rawGps.lon,
-      speed: sp ? Float64Array.from(sp.data, (v) => v * k) : undefined,
-      yaw: byName('yaw', 'heading', 'yawangle', 'course')?.data,
-      latAccel: byName('accely', 'acc_y', 'latacc')?.data,
-    })
-  }, [base, rawGps, track.fuse, track.speedChannel, track.speedUnit])
-  const gps = useMemo(
-    () => (rawGps && fusion ? { ...rawGps, lat: fusion.lat, lon: fusion.lon } : rawGps),
-    [rawGps, fusion],
-  )
-
-  const dist = useMemo(() => {
-    const resolved = resolveDistanceSource(base.channels, gps, track)
-    if (!resolved) return { distance: null, label: '' }
-    return {
-      distance: cumulativeDistance(base.time, base.channels, resolved.source, gps),
-      label: resolved.label,
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [base, gps, track.distance, track.speedChannel, track.speedUnit])
-
-  const mode = track.lapMode ?? 'loop'
-  const crossings = useMemo(
-    () =>
-      gps && track.beacon && (mode === 'loop' || mode === 'gates')
-        ? beaconCrossings(base.time, gps, track.beacon, track.radius, track.minLap)
-        : [],
-    [base, gps, track.beacon, track.radius, track.minLap, mode],
-  )
-  const finishes = useMemo(
-    () =>
-      gps && track.finish && mode === 'gates'
-        ? beaconCrossings(base.time, gps, track.finish, track.radius, 1)
-        : [],
-    [base, gps, track.finish, track.radius, mode],
-  )
-  const launchMarks = useLaunchMarks()[raw.path]
-
-  const laps = useMemo(() => {
-    const time = base.time
-    if (mode === 'gates') return buildRuns(time, dist.distance, pairGates(crossings, finishes))
-    if (mode === 'launch') {
-      const sp = findSpeed(base.channels)
-      const ground = dist.distance
-        ? speedFromDistance(time, dist.distance)
-        : sp
-          ? Float64Array.from(sp.data, (v) => v * TO_MPS[guessSpeedUnit(sp.unit)])
-          : null
-      const found = ground ? findLaunches({ time, ground, window: 120 }) : []
-      const length = track.runLength ?? 75
-      const pairs: [number, number][] = found.map((l) => [
-        l.start,
-        runEnd(time, dist.distance, l.start, l.end, length),
-      ])
-      for (const [a, b] of launchMarks ?? []) {
-        const i = lowerBound(time, a)
-        const j = Math.min(time.length - 1, lowerBound(time, b))
-        if (j > i) pairs.push([i, j])
-      }
-      return buildRuns(time, dist.distance, pairs)
-    }
-    const manual = (splitTimes ?? []).map((t) => lowerBound(time, t))
-    return buildLaps(time, dist.distance, mode === 'manual' ? manual : [...crossings, ...manual])
-  }, [base, dist.distance, crossings, finishes, splitTimes, mode, launchMarks, track.runLength])
-
-  const extra = useMemo(() => {
-    let color = base.channels.length
-    const next = () => CHANNEL_COLORS[color++ % CHANNEL_COLORS.length]
-    const out: Channel[] = []
-    if (dist.distance) out.push(makeChannel('Distance', 'Analysis', 'm', 1, dist.distance, next()))
-    if (laps.length > 0) {
-      const cols = lapColumns(base.time, dist.distance, laps)
-      out.push(makeChannel('Lap Number', 'Analysis', '', 0, cols.lapNo, next()))
-      out.push(makeChannel('Lap Time', 'Analysis', 's', 2, cols.lapTime, next()))
-      if (cols.lapDist)
-        out.push(makeChannel('Lap Distance', 'Analysis', 'm', 1, cols.lapDist, next()))
-    }
-    return out.filter((c) => !base.byId.has(c.id))
-  }, [base, dist.distance, laps])
-
-  const math = useMemo(() => {
-    const all = [...base.channels, ...extra]
-    const byName = new Map(all.map((c) => [c.name, c.data]))
-    const { results, errors } = computeAll(
-      defs,
-      { n: base.time.length, time: base.time, get: (name) => byName.get(name) },
-      new Set(byName.keys()),
-    )
-    let color = all.length
-    const channels: Channel[] = []
-    for (const d of defs) {
-      const r = results.get(d.id)
-      if (!r) continue
-      channels.push({
-        id: r.name,
-        name: r.name,
-        group: 'Math',
-        unit: d.unit,
-        precision: d.precision,
-        data: r.data,
-        color: CHANNEL_COLORS[color++ % CHANNEL_COLORS.length],
-      })
-    }
-    return { channels, errors }
-  }, [base, extra, defs])
-
-  const session = useMemo<Session>(() => {
-    if (extra.length === 0 && math.channels.length === 0) return base
-    const channels = [...base.channels, ...extra, ...math.channels]
-    return { ...base, channels, byId: new Map(channels.map((c) => [c.id, c])) }
-  }, [base, extra, math.channels])
-
-  const timeSlip = useMemo(
-    () => ({
-      id: TIMESLIP_ID,
-      name: 'Time slip',
-      group: 'Analysis',
-      unit: 's',
-      precision: 3,
-      data: new Float64Array(0),
-      color: '#e4e4e7',
-    }),
-    [],
-  )
-
+export function sessionDistance(
+  base: Session,
+  gps: Gps | null,
+  track: Pick<TrackSettings, 'distance' | 'speedChannel' | 'speedUnit'>,
+) {
+  const resolved = resolveDistanceSource(base.channels, gps, track)
+  if (!resolved) return { distance: null, label: '' }
   return {
-    fusion,
-    session,
-    gps,
-    distance: dist.distance,
-    distanceLabel: dist.label,
-    laps,
-    crossings,
-    mathErrors: math.errors,
-    timeSlip,
+    distance: cumulativeDistance(base.time, base.channels, resolved.source, gps),
+    label: resolved.label,
   }
+}
+
+export function sessionLaps(
+  base: Session,
+  distance: Float64Array | null,
+  crossings: number[],
+  finishes: number[],
+  splitTimes: number[] | undefined,
+  mode: LapMode,
+  launchMarks: [number, number][] | undefined,
+  runLength: number | undefined,
+) {
+  const time = base.time
+  if (mode === 'gates') return buildRuns(time, distance, pairGates(crossings, finishes))
+  if (mode === 'launch') {
+    const sp = findSpeed(base.channels)
+    const ground = distance
+      ? speedFromDistance(time, distance)
+      : sp
+        ? Float64Array.from(sp.data, (v) => v * TO_MPS[guessSpeedUnit(sp.unit)])
+        : null
+    const found = ground ? findLaunches({ time, ground, window: 120 }) : []
+    const length = runLength ?? 75
+    const pairs: [number, number][] = found.map((l) => [
+      l.start,
+      runEnd(time, distance, l.start, l.end, length),
+    ])
+    for (const [a, b] of launchMarks ?? []) {
+      const i = lowerBound(time, a)
+      const j = Math.min(time.length - 1, lowerBound(time, b))
+      if (j > i) pairs.push([i, j])
+    }
+    return buildRuns(time, distance, pairs)
+  }
+  const manual = (splitTimes ?? []).map((t) => lowerBound(time, t))
+  return buildLaps(time, distance, mode === 'manual' ? manual : [...crossings, ...manual])
+}
+
+export function derivedChannels(base: Session, distance: Float64Array | null, laps: Lap[]) {
+  let color = base.channels.length
+  const next = () => CHANNEL_COLORS[color++ % CHANNEL_COLORS.length]
+  const out: Channel[] = []
+  if (distance) out.push(makeChannel('Distance', 'Analysis', 'm', 1, distance, next()))
+  if (laps.length > 0) {
+    const cols = lapColumns(base.time, distance, laps)
+    out.push(makeChannel('Lap Number', 'Analysis', '', 0, cols.lapNo, next()))
+    out.push(makeChannel('Lap Time', 'Analysis', 's', 2, cols.lapTime, next()))
+    if (cols.lapDist)
+      out.push(makeChannel('Lap Distance', 'Analysis', 'm', 1, cols.lapDist, next()))
+  }
+  return out.filter((c) => !base.byId.has(c.id))
+}
+
+export function mathChannels(base: Session, extra: Channel[], defs: MathDef[]) {
+  const all = [...base.channels, ...extra]
+  const byName = new Map(all.map((c) => [c.name, c.data]))
+  const { results, errors } = computeAll(
+    defs,
+    { n: base.time.length, time: base.time, get: (name) => byName.get(name) },
+    new Set(byName.keys()),
+  )
+  let color = all.length
+  const channels: Channel[] = []
+  for (const d of defs) {
+    const r = results.get(d.id)
+    if (!r) continue
+    channels.push({
+      id: r.name,
+      name: r.name,
+      group: 'Math',
+      unit: d.unit,
+      precision: d.precision,
+      data: r.data,
+      color: CHANNEL_COLORS[color++ % CHANNEL_COLORS.length],
+    })
+  }
+  return { channels, errors }
+}
+
+export function withUnits(session: Session, units: readonly string[]): Session {
+  let changed = false
+  const channels = session.channels.map((c, i) => {
+    const unit = units[i] || c.unit
+    if (unit === c.unit) return c
+    changed = true
+    return { ...c, unit }
+  })
+  return changed ? { ...session, channels, byId: new Map(channels.map((c) => [c.id, c])) } : session
 }

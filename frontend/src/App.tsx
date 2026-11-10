@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { LiveService } from '../bindings/dawg_viewer/services'
 import { SetupsDialog } from './components/SetupsDialog'
 import type { Session } from './data/session'
@@ -40,6 +40,7 @@ function App() {
   const [setups, setSetups] = useState<'start' | 'manage' | null>(null)
   const [watching, setWatching] = useState(false)
   const [waitingLive, setWaitingLive] = useState(false)
+  const openingLog = useRef(false)
 
   useEffect(() => {
     if (!watching || tab !== 'viewer') return
@@ -68,6 +69,8 @@ function App() {
   }, [])
 
   const load = async (open: () => Promise<Session | null>) => {
+    if (openingLog.current) return
+    openingLog.current = true
     setWatching(false)
     setLoading(true)
     setError('')
@@ -82,6 +85,7 @@ function App() {
       setError(String(e instanceof Error ? e.message : e))
       setTab('viewer')
     } finally {
+      openingLog.current = false
       setLoading(false)
     }
   }
@@ -165,7 +169,7 @@ function App() {
       </div>
       {tab === 'logs' && (
         <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
-          <LogsView onOpen={(path) => load(() => openLog(path))} />
+          <LogsView opening={loading} onOpen={(path) => load(() => openLog(path))} />
         </div>
       )}
       <div className={`min-h-0 min-w-0 flex-1 overflow-hidden ${tab === 'viewer' ? '' : 'hidden'}`}>

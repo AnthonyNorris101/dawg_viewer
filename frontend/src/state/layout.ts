@@ -1,4 +1,5 @@
-export type PanelKind = 'time' | 'xy' | 'histogram' | 'map' | 'spectrum' | 'launch' | 'aero'
+import type { PanelKind } from './panels'
+export type { PanelKind } from './panels'
 
 export interface Panel {
   id: number

@@ -2,7 +2,7 @@ import type { Row } from '../../bindings/dawg_viewer/internal/live/models'
 import { calFn } from '../data/calibration'
 import type { Session } from '../data/session'
 import { channels, emptyStatus, info, refresh, status, store, testMode } from '../live/connection'
-import { sessionFromColumns } from '../viewer/openLog'
+import { sessionFromColumns } from '../data/columns'
 import { CHANNELS, liveCar, sampleLog } from './sim'
 
 export const TEST_LOG_PATH = 'test-mode://sample-outing'
@@ -94,10 +94,16 @@ export function testSession(): Session {
     const col = data.subarray((i + 1) * n, (i + 2) * n)
     for (let k = 0; k < n; k++) col[k] = fn(col[k])
   })
-  return sessionFromColumns(data.buffer, n, sample.channels, {
-    name: 'Test outing (simulated car)',
-    path: TEST_LOG_PATH,
-    source: 'wide',
-    note: 'made-up data from test mode',
-  })
+  return sessionFromColumns(
+    data.buffer,
+    n,
+    sample.channels,
+    {
+      name: 'Test outing (simulated car)',
+      path: TEST_LOG_PATH,
+      source: 'wide',
+      note: 'made-up data from test mode',
+    },
+    info.get()?.channels ?? {},
+  )
 }

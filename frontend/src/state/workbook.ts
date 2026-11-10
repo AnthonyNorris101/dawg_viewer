@@ -1,3 +1,4 @@
+import { isPanelKind } from './panels'
 import { isObject } from './storage'
 import {
   layoutReducer,
@@ -22,6 +23,7 @@ export interface Workbook {
 
 export type WorkbookAction =
   | { type: 'layout'; action: LayoutAction }
+  | { type: 'removeChannel'; channelId: string }
   | { type: 'addSheet'; name?: string; layout?: Layout }
   | { type: 'duplicateSheet'; id: number }
   | { type: 'removeSheet'; id: number }
@@ -41,6 +43,19 @@ export function workbookReducer(wb: Workbook, action: WorkbookAction): Workbook 
       const layout = layoutReducer(sheet.layout, action.action)
       if (layout === sheet.layout) return wb
       return { ...wb, sheets: wb.sheets.map((s) => (s.id === sheet.id ? { ...s, layout } : s)) }
+    }
+    case 'removeChannel': {
+      let changed = false
+      const sheets = wb.sheets.map((sheet) => {
+        let changedSheet = false
+        const panels = sheet.layout.panels.map((panel) => {
+          if (!panel.channelIds.includes(action.channelId)) return panel
+          changed = changedSheet = true
+          return { ...panel, channelIds: panel.channelIds.filter((id) => id !== action.channelId) }
+        })
+        return changedSheet ? { ...sheet, layout: { ...sheet.layout, panels } } : sheet
+      })
+      return changed ? { ...wb, sheets } : wb
     }
     case 'addSheet': {
       const sheet: Sheet = {
@@ -89,13 +104,11 @@ export function workbookReducer(wb: Workbook, action: WorkbookAction): Workbook 
 
 const SUSPENSION = /damp|shock|susp|travel|ride.?h|wheel.?pos|pot/i
 
-const KINDS: PanelKind[] = ['time', 'xy', 'histogram', 'map', 'spectrum', 'launch', 'aero']
-
 function validPanel(p: unknown): p is Panel {
   return (
     isObject(p) &&
     typeof p.id === 'number' &&
-    KINDS.includes(p.kind as PanelKind) &&
+    isPanelKind(p.kind) &&
     Array.isArray(p.channelIds) &&
     p.channelIds.every((c) => typeof c === 'string') &&
     typeof p.wide === 'boolean'

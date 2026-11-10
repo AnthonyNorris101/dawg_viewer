@@ -91,4 +91,16 @@ describe('workbook', () => {
     expect(last(wb).name).toBe('Brakes')
     expect(validWorkbook({ sheets: [] })).toBe(false)
   })
+
+  it('removes a deleted channel from every worksheet while retaining unrelated panels', () => {
+    let wb = defaultWorkbook(new Set(['RPM', 'VSS']), false)
+    wb = workbookReducer(wb, { type: 'addSheet', layout: makeLayout([['RPM'], ['VSS']]) })
+    const untouched = last(wb).layout.panels[1]
+    const next = workbookReducer(wb, { type: 'removeChannel', channelId: 'RPM' })
+    expect(
+      next.sheets.every((s) => s.layout.panels.every((p) => !p.channelIds.includes('RPM'))),
+    ).toBe(true)
+    expect(last(next).layout.panels[1]).toBe(untouched)
+    expect(workbookReducer(next, { type: 'removeChannel', channelId: 'missing' })).toBe(next)
+  })
 })

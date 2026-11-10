@@ -1,3 +1,4 @@
+import type { LapSelection } from '../viewer/useViewerNavigation'
 import { memo, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { rangeStats, type Stats } from '../analysis/stats'
 import { bestLap, findSpeed, formatLapTime, type Lap, type SpeedUnit } from '../analysis/track'
@@ -31,11 +32,6 @@ import type { Analysis } from '../viewer/analysis'
 import type { XView } from '../viewer/xview'
 
 type Tab = 'laps' | 'stats' | 'values'
-
-export interface LapSelection {
-  keys: string[]
-  refKey: string
-}
 
 interface Props {
   analysis: Analysis
