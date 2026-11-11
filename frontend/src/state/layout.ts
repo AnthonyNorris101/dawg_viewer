@@ -10,6 +10,8 @@ export interface Panel {
   fftSize?: number
   envelope?: boolean
   fullY?: boolean
+  yBounds?: Record<string, [number, number]>
+  xyBounds?: { x?: [number, number]; y?: [number, number] }
   gMode?: 'combined' | 'lateral'
   ref?: string
 }

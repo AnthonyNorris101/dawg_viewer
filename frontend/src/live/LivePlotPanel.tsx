@@ -92,6 +92,10 @@ export const LivePlotPanel = memo(function LivePlotPanel({
   useEffect(() => {
     plotRef.current?.setSpikeFree(spikeFree)
   }, [spikeFree, names, metas, sync])
+  useEffect(
+    () => plotRef.current?.setYBounds(panel.yBounds ?? {}),
+    [panel.yBounds, names, metas, sync],
+  )
 
   return (
     <section
@@ -99,6 +103,7 @@ export const LivePlotPanel = memo(function LivePlotPanel({
         active ? 'border-red-500' : 'border-transparent'
       }`}
       onPointerDown={() => dispatch({ type: 'setActive', panelId: panel.id })}
+      data-panel-id={panel.id}
     >
       <header className="flex items-center gap-3 border-b border-zinc-800 px-3 py-1 text-xs">
         <span
@@ -174,8 +179,8 @@ export const LivePlotPanel = memo(function LivePlotPanel({
           aria-label={`Ignore spikes when scaling plot ${index + 1}`}
           title={
             spikeFree
-              ? 'Y axis ignores the most extreme 0.1% of points. Click to fit every point. Wheel over an axis to zoom it, double-click it to reset.'
-              : 'Y axis fits every point. Click to ignore spikes. Wheel over an axis to zoom it, double-click it to reset.'
+              ? 'Y axis ignores the most extreme 0.1% of points. Click to fit every point.'
+              : 'Y axis fits every point. Click to ignore spikes.'
           }
           className={`shrink-0 ${spikeFree ? 'text-zinc-200' : 'text-zinc-600'} hover:text-zinc-100`}
           onClick={() =>

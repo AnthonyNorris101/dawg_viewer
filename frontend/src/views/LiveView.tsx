@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useState } from 'react'
 import type { ChannelMeta } from '../../bindings/dawg_viewer/internal/config/models'
 import { ChannelEditor } from '../components/ChannelEditor'
+import { PlotContextMenu } from '../components/PlotContextMenu'
 import { ChannelList, type ListChannel } from '../components/ChannelList'
 import { RangeBar } from '../components/RangeBar'
 import { LiveGraphStack } from '../components/LiveGraphStack'
@@ -86,6 +87,8 @@ export function LiveView({ layoutMode = 'default' }: { layoutMode?: LiveLayoutMo
     [channels, metas],
   )
   const [editing, setEditing] = useState<string | null>(null)
+  const [menu, setMenu] = useState<{ id: number; x: number; y: number } | null>(null)
+  const menuPanel = layout.panels.find((p) => p.id === menu?.id)
   const editingChannel = listChannels.find((c) => c.id === editing)
   const groups = useMemo(() => [...new Set(listChannels.map((c) => c.group))], [listChannels])
   const deviceIds = useMemo(
@@ -95,7 +98,27 @@ export function LiveView({ layoutMode = 'default' }: { layoutMode?: LiveLayoutMo
   const currentValue = useCallback(() => (editing ? store.latest(editing) : undefined), [editing])
 
   return (
-    <div className="flex h-full min-w-0 flex-col overflow-hidden">
+    <div
+      className="flex h-full min-w-0 flex-col overflow-hidden"
+      onContextMenu={(event) => {
+        const target = (event.target as HTMLElement).closest<HTMLElement>('[data-panel-id]')
+        if (!target) return
+        event.preventDefault()
+        setMenu({ id: Number(target.dataset.panelId), x: event.clientX, y: event.clientY })
+      }}
+    >
+      {menu && menuPanel && (
+        <PlotContextMenu
+          key={menu.id}
+          panel={menuPanel}
+          x={menu.x}
+          y={menu.y}
+          units={[...new Set(menuPanel.channelIds.map((id) => metas[id]?.unit || id))]}
+          onPatch={(patch) => dispatch({ type: 'setPanel', panelId: menu.id, patch })}
+          onEdit={setEditing}
+          onClose={() => setMenu(null)}
+        />
+      )}
       <StatusHeader />
       <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <ChannelList

@@ -10,6 +10,7 @@ const plot = vi.hoisted(() => ({
   update: vi.fn(),
   destroy: vi.fn(),
   setSpikeFree: vi.fn(),
+  setYBounds: vi.fn(),
   zoom: vi.fn(),
 }))
 vi.mock('../plot/mountPlot', () => ({ mountPlot: vi.fn(() => plot) }))

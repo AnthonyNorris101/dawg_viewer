@@ -92,6 +92,8 @@ export const XYPanel = memo(function XYPanel({
         y0 = -r * Math.max(1, 1 / ax)
         y1 = r * Math.max(1, 1 / ax)
       }
+      if (panel.xyBounds?.x) [x0, x1] = panel.xyBounds.x
+      if (panel.xyBounds?.y) [y0, y1] = panel.xyBounds.y
       scale = { x0, x1, y0, y1 }
       drawAxes(
         ctx,
@@ -243,7 +245,7 @@ export const XYPanel = memo(function XYPanel({
       cursor.destroy()
       base.destroy()
     }
-  }, [xc, yc, view, sync, showEnvelope, compare])
+  }, [xc, yc, view, sync, showEnvelope, compare, panel.xyBounds])
 
   const set = (i: number) => (id: string) => {
     const ids = [xId, yId]

@@ -92,6 +92,10 @@ export const PlotPanel = memo(function PlotPanel({
   useEffect(() => {
     plotRef.current?.setSpikeFree(spikeFree)
   }, [spikeFree, structure, sync])
+  useEffect(
+    () => plotRef.current?.setYBounds(panel.yBounds ?? {}),
+    [panel.yBounds, structure, sync],
+  )
 
   const missing = panel.channelIds.length - channels.length
 

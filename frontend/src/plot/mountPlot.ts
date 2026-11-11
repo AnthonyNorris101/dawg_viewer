@@ -65,6 +65,7 @@ export interface MountedPlot {
   update(data: uPlot.AlignedData): void
   zoom(factor: number): void
   setSpikeFree(on: boolean): void
+  setYBounds(bounds: Record<string, [number, number]>): void
   destroy(): void
 }
 
@@ -100,52 +101,6 @@ function wheelZoom(bounds: PlotOptions['bounds'], minSpan: () => number): uPlot.
           },
           { passive: false },
         )
-      },
-    },
-  }
-}
-
-function axisZoom(
-  units: string[],
-  manualY: Map<string, [number, number]>,
-  refit: () => void,
-): uPlot.Plugin {
-  const keyAt = (u: uPlot, clientX: number) => {
-    const r = u.over.getBoundingClientRect()
-    if (clientX < r.left) return units[0]
-    if (clientX > r.right && units.length > 1) return units[1]
-    return null
-  }
-  return {
-    hooks: {
-      ready(u) {
-        u.root.addEventListener(
-          'wheel',
-          (e) => {
-            const key = keyAt(u, e.clientX)
-            if (!key) return
-            e.preventDefault()
-            const { min, max } = u.scales[key]
-            if (min == null || max == null) return
-            let next: [number, number]
-            if (e.shiftKey) {
-              const shift = Math.sign(e.deltaY || e.deltaX) * (max - min) * PAN_STEP
-              next = [min - shift, max - shift]
-            } else {
-              const at = u.posToVal(e.clientY - u.over.getBoundingClientRect().top, key)
-              const f = e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP
-              next = [at - (at - min) * f, at + (max - at) * f]
-            }
-            manualY.set(key, next)
-            u.setScale(key, { min: next[0], max: next[1] })
-          },
-          { passive: false },
-        )
-        u.root.addEventListener('dblclick', (e) => {
-          const key = keyAt(u, e.clientX)
-          if (!key || !manualY.delete(key)) return
-          refit()
-        })
       },
     },
   }
@@ -197,10 +152,10 @@ export function mountPlot(host: HTMLElement, opts: PlotOptions): MountedPlot {
   const { series, sync } = opts
   const minSpan = () => (typeof opts.minSpan === 'function' ? opts.minSpan() : opts.minSpan)
   const units = [...new Set(series.map((s) => s.unit))]
-  const manualY = new Map<string, [number, number]>()
+  let manualY = opts.ranges ?? {}
   let spikeFree = false
   const yRange: uPlot.Range.Function = (self, min, max, key) => {
-    const set = manualY.get(key)
+    const set = manualY[key]
     if (set) return set
     const robust = spikeFree ? spikeFreeExtent(self, key) : null
     const lo = robust ? robust[0] : min
@@ -259,7 +214,6 @@ export function mountPlot(host: HTMLElement, opts: PlotOptions): MountedPlot {
       ],
       plugins: [
         wheelZoom(opts.bounds, minSpan),
-        axisZoom(units, manualY, () => refitY()),
         markerLines(() =>
           typeof opts.markers === 'function' ? opts.markers() : (opts.markers ?? []),
         ),
@@ -325,7 +279,10 @@ export function mountPlot(host: HTMLElement, opts: PlotOptions): MountedPlot {
     },
     setSpikeFree(on) {
       spikeFree = on
-      manualY.clear()
+      refitY()
+    },
+    setYBounds(bounds) {
+      manualY = bounds
       refitY()
     },
     destroy() {

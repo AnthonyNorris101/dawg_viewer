@@ -29,6 +29,7 @@ export function PanelFrame({
         active ? 'border-red-500' : 'border-transparent'
       } ${panel.wide ? 'col-span-2' : ''} ${tall ? 'row-span-2' : ''}`}
       onPointerDown={() => dispatch({ type: 'setActive', panelId: panel.id })}
+      data-panel-id={panel.id}
     >
       <header className="flex items-center gap-3 border-b border-zinc-800 px-3 py-1 text-xs">
         <span className="shrink-0 text-zinc-500">{title}</span>
@@ -154,8 +155,8 @@ export function PlotTools({
           aria-label={`Ignore spikes when scaling ${title}`}
           title={
             spikeFree
-              ? 'Y axis ignores the most extreme 0.1% of points so one glitch can’t flatten the trace. Click to fit every point. Wheel over an axis to zoom it, double-click the axis to reset.'
-              : 'Y axis fits every point. Click to ignore the most extreme 0.1% (spikes). Wheel over an axis to zoom it, double-click the axis to reset.'
+              ? 'Y axis ignores the most extreme 0.1% of points. Click to fit every point.'
+              : 'Y axis fits every point. Click to ignore spikes.'
           }
           className={`${toolButton} ${spikeFree ? 'text-zinc-200' : 'text-zinc-600'}`}
           onClick={() => onSpikeFree(!spikeFree)}

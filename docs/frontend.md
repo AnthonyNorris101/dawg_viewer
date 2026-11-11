@@ -99,9 +99,11 @@ hooks, and the "same range" check stops the echo.
 - Each y scale is fitted to the data in view. With "ignore spikes" (↕ in the
   panel header, on by default) it ignores the most extreme 0.1% of the
   visible points (from a sample of at most 4,000 per axis), so one glitch or
-  dropped-packet zero can't flatten the trace. Wheel over a y axis zooms that
-  axis about the pointer (shift+wheel pans it); double-click the axis to go
-  back to automatic. `zoom(factor)` backs the − / + header buttons and zooms
+  dropped-packet zero can't flatten the trace. Right-click a time plot to set
+  fixed bounds per y axis or return an axis to automatic scaling. The context
+  menu also links to channel editing and, in Viewer, filtering. Histogram menus
+  expose bin count, XY menus expose axis bounds, and Spectrum menus expose FFT
+  window size. `zoom(factor)` backs the − / + header buttons and zooms
   x about the middle of the view, which the other synced plots follow.
 
 ## Cards (live/PinnedCards.tsx)

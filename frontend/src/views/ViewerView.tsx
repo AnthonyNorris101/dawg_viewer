@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChannelEditor } from '../components/ChannelEditor'
+import { PlotContextMenu } from '../components/PlotContextMenu'
 import { ChannelList } from '../components/ChannelList'
 import { FilterDialog, type FilterStart } from '../components/FilterDialog'
 import { parseFilter } from '../analysis/filters'
@@ -156,6 +157,8 @@ function LoadedLog({
 
   const [editing, setEditing] = useState<string | null>(null)
   const [filtering, setFiltering] = useState<FilterStart | null>(null)
+  const [menu, setMenu] = useState<{ id: number; x: number; y: number } | null>(null)
+  const menuPanel = layout.panels.find((p) => p.id === menu?.id)
   const editingChannel = editing ? session.byId.get(editing) : undefined
   const isLogChannel = useCallback((id: string) => base.byId.has(id), [base])
   const isMathChannel = useCallback(
@@ -326,7 +329,15 @@ function LoadedLog({
           onDelete={deleteChannel}
         />
         <div className="flex min-w-0 flex-1 flex-col">
-          <main className="grid min-h-0 min-w-0 flex-1 auto-rows-[minmax(17rem,1fr)] grid-cols-2 gap-px overflow-y-auto bg-zinc-800">
+          <main
+            className="grid min-h-0 min-w-0 flex-1 auto-rows-[minmax(17rem,1fr)] grid-cols-2 gap-px overflow-y-auto bg-zinc-800"
+            onContextMenu={(event) => {
+              const target = (event.target as HTMLElement).closest<HTMLElement>('[data-panel-id]')
+              if (!target) return
+              event.preventDefault()
+              setMenu({ id: Number(target.dataset.panelId), x: event.clientX, y: event.clientY })
+            }}
+          >
             {layout.panels.map((panel, i) => {
               const key = `${sheet.id}-${panel.id}`
               const common = {
@@ -378,6 +389,23 @@ function LoadedLog({
               }
             })}
           </main>
+          {menu && menuPanel && (
+            <PlotContextMenu
+              key={menu.id}
+              panel={menuPanel}
+              x={menu.x}
+              y={menu.y}
+              units={[
+                ...new Set(menuPanel.channelIds.map((id) => session.byId.get(id)?.unit || id)),
+              ]}
+              onPatch={(patch) => dispatch({ type: 'setPanel', panelId: menu.id, patch })}
+              onEdit={setEditing}
+              onFilter={(ids) =>
+                setFiltering({ channelIds: ids.filter((id) => session.byId.has(id)) })
+              }
+              onClose={() => setMenu(null)}
+            />
+          )}
           <RangeBar sync={sync} bounds={viewBounds} markers={markerXs} minSpan={view.minSpan} />
         </div>
         {showSide && (
