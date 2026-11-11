@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+import userEvent from '@testing-library/user-event'
 import { PlotContextMenu } from './PlotContextMenu'
 
 describe('PlotContextMenu', () => {
@@ -77,5 +78,58 @@ describe('PlotContextMenu', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'Apply bounds' }))
     expect(onPatch).toHaveBeenCalledWith({ xyBounds: { x: [-2, 2] } })
+  })
+
+  it('keeps numeric fields in tab order and applies Y bounds with Enter', async () => {
+    const user = userEvent.setup()
+    const onPatch = vi.fn()
+    render(
+      <PlotContextMenu
+        panel={{ id: 2, kind: 'time', channelIds: [], wide: true }}
+        x={10}
+        y={10}
+        units={['rpm']}
+        onPatch={onPatch}
+        onEdit={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+    const axis = screen.getByRole('button', { name: 'Y axis' })
+    const minimum = screen.getByRole('spinbutton', { name: 'Y minimum' })
+    const maximum = screen.getByRole('spinbutton', { name: 'Y maximum' })
+    expect(minimum).toHaveAttribute('step', 'any')
+    axis.focus()
+    await user.tab()
+    expect(minimum).toHaveFocus()
+    await user.type(minimum, '-1.5')
+    await user.tab()
+    expect(maximum).toHaveFocus()
+    await user.type(maximum, '2.5{Enter}')
+    expect(onPatch).toHaveBeenCalledWith({ yBounds: { rpm: [-1.5, 2.5] } })
+  })
+
+  it('renders and navigates the Y axis choices inside the styled menu', async () => {
+    const user = userEvent.setup()
+    render(
+      <PlotContextMenu
+        panel={{ id: 2, kind: 'time', channelIds: [], wide: true }}
+        x={10}
+        y={10}
+        units={['rpm', 'mph']}
+        onPatch={vi.fn()}
+        onEdit={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+    const axis = screen.getByRole('button', { name: 'Y axis' })
+    await user.click(axis)
+    expect(screen.getByRole('listbox', { name: 'Y axis choices' })).toBeInTheDocument()
+    const mph = screen.getByRole('option', { name: 'mph' })
+    mph.focus()
+    await user.keyboard('{Enter}')
+    expect(axis).toHaveTextContent('mph')
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    await user.tab()
+    expect(screen.getByRole('spinbutton', { name: 'Y minimum' })).toHaveFocus()
   })
 })
