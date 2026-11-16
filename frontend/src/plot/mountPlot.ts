@@ -38,6 +38,7 @@ export interface PlotOptions {
   markers?: PlotMarker[] | (() => PlotMarker[])
   plugins?: uPlot.Plugin[]
   ranges?: Record<string, [number, number]>
+  pinCursor?: boolean
 }
 
 function spikeFreeExtent(u: uPlot, key: string): [number, number] | null {
@@ -142,6 +143,47 @@ function markerLines(markers: () => PlotMarker[]): uPlot.Plugin {
   }
 }
 
+function pinnedCursor(sync: ViewSync): uPlot.Plugin {
+  return {
+    hooks: {
+      ready(u) {
+        let down: [number, number] | null = null
+        u.over.addEventListener('pointerdown', (event) => {
+          if (event.button === 0) down = [event.clientX, event.clientY]
+        })
+        u.over.addEventListener('pointerup', (event) => {
+          if (!down || event.button !== 0) return
+          const [startX, startY] = down
+          down = null
+          if (Math.hypot(event.clientX - startX, event.clientY - startY) > 4) return
+          const rect = u.over.getBoundingClientRect()
+          const idx = u.valToIdx(u.posToVal(event.clientX - rect.left, 'x'))
+          const x = (u.data[0] as ArrayLike<number>)[idx]
+          if (Number.isFinite(x)) sync.pin(x)
+        })
+        u.over.addEventListener('pointercancel', () => {
+          down = null
+        })
+      },
+      draw(u) {
+        const x = sync.pinnedX()
+        if (x == null || x < (u.scales.x.min ?? Infinity) || x > (u.scales.x.max ?? -Infinity))
+          return
+        const { ctx, bbox } = u
+        const px = Math.round(u.valToPos(x, 'x', true)) + 0.5
+        ctx.save()
+        ctx.strokeStyle = '#facc15'
+        ctx.lineWidth = devicePixelRatio
+        ctx.beginPath()
+        ctx.moveTo(px, bbox.top)
+        ctx.lineTo(px, bbox.top + bbox.height)
+        ctx.stroke()
+        ctx.restore()
+      },
+    },
+  }
+}
+
 function clampShift(shift: number, min: number, max: number, xMin: number, xMax: number) {
   if (min + shift < xMin) return Math.min(0, xMin - min)
   if (max + shift > xMax) return Math.max(0, xMax - max)
@@ -214,6 +256,7 @@ export function mountPlot(host: HTMLElement, opts: PlotOptions): MountedPlot {
       ],
       plugins: [
         wheelZoom(opts.bounds, minSpan),
+        ...(opts.pinCursor === false ? [] : [pinnedCursor(sync)]),
         markerLines(() =>
           typeof opts.markers === 'function' ? opts.markers() : (opts.markers ?? []),
         ),
@@ -224,7 +267,7 @@ export function mountPlot(host: HTMLElement, opts: PlotOptions): MountedPlot {
         setCursor: [
           (u) => {
             const idx = u.cursor.idx ?? null
-            opts.onCursor(idx)
+            if (sync.pinnedX() == null) opts.onCursor(idx)
             sync.publishCursor(idx)
           },
         ],
@@ -235,6 +278,15 @@ export function mountPlot(host: HTMLElement, opts: PlotOptions): MountedPlot {
   )
   let unregister: (() => void) | null = sync.register(u)
   let pending: uPlot.AlignedData | null = null
+  const offPin = sync.onPin(() => {
+    const x = sync.pinnedX()
+    opts.onCursor(x == null ? null : u.valToIdx(x))
+    u.redraw()
+  })
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key === 'Escape') sync.clearPin()
+  }
+  document.addEventListener('keydown', onKeyDown)
 
   const resize = new ResizeObserver(() => {
     const { clientWidth: width, clientHeight: height } = host
@@ -264,6 +316,7 @@ export function mountPlot(host: HTMLElement, opts: PlotOptions): MountedPlot {
     update(data: uPlot.AlignedData) {
       if (unregister) u.setData(data, false)
       else pending = data
+      sync.refreshPin()
     },
     zoom(factor) {
       const { min, max } = u.scales.x
@@ -286,6 +339,8 @@ export function mountPlot(host: HTMLElement, opts: PlotOptions): MountedPlot {
       refitY()
     },
     destroy() {
+      offPin()
+      document.removeEventListener('keydown', onKeyDown)
       seen.disconnect()
       resize.disconnect()
       unregister?.()

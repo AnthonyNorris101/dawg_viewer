@@ -96,6 +96,9 @@ hooks, and the "same range" check stops the echo.
   the plot area.
 - Wheel zooms about the pointer, shift+wheel or a horizontal wheel pans,
   within the current data bounds.
+- A left click on a time plot pins one sample across the synced plots and their
+  readouts. Another click moves the pin; Escape clears it. Dragging still zooms.
+  Live pins clear when their sample leaves the rolling buffer.
 - Each y scale is fitted to the data in view. With "ignore spikes" (↕ in the
   panel header, on by default) it ignores the most extreme 0.1% of the
   visible points (from a sample of at most 4,000 per axis), so one glitch or

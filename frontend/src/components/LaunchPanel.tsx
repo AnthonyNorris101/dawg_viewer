@@ -278,6 +278,7 @@ export const LaunchPanel = memo(function LaunchPanel({
       series,
       data: [grid, ...series.map((x) => x.data)] as uPlot.AlignedData,
       sync: fsync,
+      pinCursor: false,
       bounds: () => [0, s.window],
       minSpan: 0.2,
       plugins: driven ? [bandPlugin(car.slipLow, car.slipHigh)] : [],

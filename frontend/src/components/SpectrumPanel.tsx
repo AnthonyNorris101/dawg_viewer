@@ -128,6 +128,7 @@ export const SpectrumPanel = memo(function SpectrumPanel({
       })),
       data: data.aligned,
       sync: fsync,
+      pinCursor: false,
       bounds: () => [0, freq[freq.length - 1] || 1],
       minSpan: 0.5,
       onCursor: (idx) => {

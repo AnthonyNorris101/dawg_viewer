@@ -14,6 +14,11 @@ export interface ViewSync {
   publishCursor(idx: number | null): void
   onRange(fn: (range: Range) => void): () => void
   onCursor(fn: (idx: number | null) => void): () => void
+  pinnedX(): number | null
+  pin(x: number): void
+  refreshPin(): void
+  clearPin(): void
+  onPin(fn: () => void): () => void
 }
 
 export function createViewSync(cursorKey: string): ViewSync {
@@ -21,6 +26,21 @@ export function createViewSync(cursorKey: string): ViewSync {
   const rangeListeners = new Set<(range: Range) => void>()
   const cursorListeners = new Set<(idx: number | null) => void>()
   let current: Range | null = null
+  let pinned: number | null = null
+  const pinListeners = new Set<() => void>()
+  const publishPinned = () => {
+    const plot = plots.values().next().value as uPlot | undefined
+    if (!plot || pinned == null) return
+    const x = plot.data[0] as ArrayLike<number>
+    if (!x.length || pinned < x[0] || pinned > x[x.length - 1]) {
+      pinned = null
+      for (const fn of pinListeners) fn()
+      for (const fn of cursorListeners) fn(null)
+      return
+    }
+    const idx = plot.valToIdx(pinned)
+    for (const fn of cursorListeners) fn(idx)
+  }
 
   const apply = (next: Range, source?: uPlot) => {
     current = next
@@ -48,6 +68,7 @@ export function createViewSync(cursorKey: string): ViewSync {
     },
     range: () => current,
     publishCursor(idx) {
+      if (pinned != null) return
       for (const fn of cursorListeners) fn(idx)
     },
     onRange(fn) {
@@ -60,6 +81,25 @@ export function createViewSync(cursorKey: string): ViewSync {
       cursorListeners.add(fn)
       return () => {
         cursorListeners.delete(fn)
+      }
+    },
+    pinnedX: () => pinned,
+    pin(x) {
+      pinned = x
+      for (const fn of pinListeners) fn()
+      publishPinned()
+    },
+    refreshPin: publishPinned,
+    clearPin() {
+      if (pinned == null) return
+      pinned = null
+      for (const fn of pinListeners) fn()
+      for (const fn of cursorListeners) fn(null)
+    },
+    onPin(fn) {
+      pinListeners.add(fn)
+      return () => {
+        pinListeners.delete(fn)
       }
     },
   }
