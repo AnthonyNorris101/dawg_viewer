@@ -231,18 +231,19 @@ func SaveDevice(dir, id string) error {
 }
 
 type Profile struct {
-	ID           string                 `yaml:"id" json:"id"`
-	Name         string                 `yaml:"name" json:"name"`
-	Address      string                 `yaml:"address" json:"address"`
-	Telemetry    Telemetry              `yaml:"telemetry" json:"telemetry"`
-	Discovery    Discovery              `yaml:"discovery" json:"discovery"`
-	Commands     Commands               `yaml:"commands" json:"commands"`
-	FileServer   *FileServer            `yaml:"fileserver" json:"fileServer"`
-	Rename       map[int]string         `yaml:"rename" json:"-"`
-	Combine      []Combine              `yaml:"combine" json:"-"`
-	Calibrations map[string]Calibration `yaml:"calibrations" json:"-"`
-	Channels     map[string]ChannelMeta `yaml:"channels" json:"channels"`
-	Car          Car                    `yaml:"car" json:"-"`
+	ID                string                 `yaml:"id" json:"id"`
+	Name              string                 `yaml:"name" json:"name"`
+	Address           string                 `yaml:"address" json:"address"`
+	AcceptedAddresses []string               `yaml:"accepted_addresses" json:"acceptedAddresses"`
+	Telemetry         Telemetry              `yaml:"telemetry" json:"telemetry"`
+	Discovery         Discovery              `yaml:"discovery" json:"discovery"`
+	Commands          Commands               `yaml:"commands" json:"commands"`
+	FileServer        *FileServer            `yaml:"fileserver" json:"fileServer"`
+	Rename            map[int]string         `yaml:"rename" json:"-"`
+	Combine           []Combine              `yaml:"combine" json:"-"`
+	Calibrations      map[string]Calibration `yaml:"calibrations" json:"-"`
+	Channels          map[string]ChannelMeta `yaml:"channels" json:"channels"`
+	Car               Car                    `yaml:"car" json:"-"`
 
 	File string `yaml:"-" json:"file"`
 }

@@ -170,7 +170,6 @@ func discoverLoop(ctx context.Context, d config.Discovery, out chan<- link.Found
 					return
 				}
 				wait = 15 * time.Second
-				break
 			}
 		}
 		select {
@@ -214,11 +213,11 @@ type hub struct {
 	device       netip.Addr
 	deviceSource string
 
-	strict     bool
-	configAddr netip.Addr
-	discovered netip.Addr
-	ignored    map[netip.Addr]uint64
-	status     Status
+	strict      bool
+	configAddrs map[netip.Addr]bool
+	discovered  map[netip.Addr]bool
+	ignored     map[netip.Addr]uint64
+	status      Status
 }
 
 func newHub(opts Options, s *Session) *hub {
@@ -235,6 +234,7 @@ func newHub(opts Options, s *Session) *hub {
 		known:      map[string]bool{},
 		unknown:    map[uint8]bool{},
 		ignored:    map[netip.Addr]uint64{},
+		discovered: map[netip.Addr]bool{},
 		nameReqErr: make(chan error, 1),
 		lastOut:    math.Inf(-1),
 	}
@@ -251,12 +251,18 @@ func newHub(opts Options, s *Session) *hub {
 	if p.Address != "" {
 		if a, err := netip.ParseAddr(p.Address); err == nil {
 			h.device, h.deviceSource = a, "config"
-			h.configAddr = a
 		}
 	}
+	configured := map[netip.Addr]bool{}
+	for _, raw := range append([]string{p.Address}, p.AcceptedAddresses...) {
+		if a, err := netip.ParseAddr(raw); err == nil {
+			configured[a.Unmap()] = true
+		}
+	}
+	h.configAddrs = configured
 
 	onlyFromDevice := p.Telemetry.OnlyFromDevice == nil || *p.Telemetry.OnlyFromDevice
-	h.strict = onlyFromDevice && (p.Discovery.Enabled || h.configAddr.IsValid())
+	h.strict = onlyFromDevice && (p.Discovery.Enabled || len(h.configAddrs) > 0)
 	h.status = Status{
 		Profile:      p.ID,
 		ProfileName:  p.Name,
@@ -314,8 +320,10 @@ func (h *hub) run(ctx context.Context, packets <-chan link.Packet, lst *link.Lis
 				h.publishStatus(time.Now())
 			}
 		case f := <-found:
-			h.device, h.deviceSource = f.Addr, "discovery"
-			h.discovered = f.Addr
+			h.discovered[f.Addr] = true
+			if h.deviceSource != "telemetry" {
+				h.device, h.deviceSource = f.Addr, "discovery"
+			}
 			delete(h.ignored, f.Addr)
 			h.status.Firmware = f.Firmware
 		case c := <-h.session.calibrations:
@@ -351,9 +359,10 @@ func (h *hub) handle(ctx context.Context, p link.Packet) {
 	}
 	h.status.Packets++
 	h.rateCount++
-	if h.deviceSource != "discovery" && p.From.IsValid() && !p.From.IsLoopback() {
+	if p.From.IsValid() && !p.From.IsLoopback() && (h.deviceSource != "telemetry" || h.device != p.From) {
 		h.device, h.deviceSource = p.From, "telemetry"
 	}
+	delete(h.ignored, p.From)
 
 	for _, f := range fields {
 		if f.ID == idCommand && !f.IsText() {
@@ -429,7 +438,7 @@ func (h *hub) handle(ctx context.Context, p link.Packet) {
 }
 
 func (h *hub) accepts(a netip.Addr) bool {
-	return a.IsValid() && (a == h.discovered || a == h.configAddr)
+	return a.IsValid() && (h.discovered[a.Unmap()] || h.configAddrs[a.Unmap()])
 }
 
 func (h *hub) learnName(id uint8, name string) {

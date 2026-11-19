@@ -6,7 +6,9 @@ name: G26 ILTM (ESP32)
 
 # The logger's IP address. Optional: discovery finds it automatically, and the
 # app also learns it from incoming telemetry. Used only if both of those fail.
-address: 192.168.0.2
+address: 172.20.16.1
+accepted_addresses:
+  - 172.24.128.1 # Local simulator address on the Windows Hyper-V adapter.
 
 telemetry:
   # UDP address the app listens on. The logger sends ITV telemetry to port

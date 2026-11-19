@@ -52,6 +52,7 @@ layout stay as they are.
 |---|---|
 | `id`, `name` | unique id (used in `settings.yaml`) and display name |
 | `address` | device IP; optional, used if discovery and telemetry don't reveal it |
+| `accepted_addresses` | optional additional telemetry source IPs for a device with multiple known addresses; these do not replace discovery |
 | `telemetry.listen` | UDP address the app listens on (default `0.0.0.0:5002`) |
 | `telemetry.only_from_device` | only use data from this device (default true); see below |
 | `discovery.enabled`, `port`, `request`, `device_id` | discovery settings; `device_id` must match the device's reply |
@@ -77,6 +78,9 @@ network, both would send to the laptop and their packets would mix. With the
 option on, only the device that answered with the profile's `device_id` (or
 sends from `address`) is used. Turn it off only when discovery can't work on
 the network and the address isn't known.
+On a computer with several network adapters, a matching device may answer
+discovery from more than one address. The app accepts telemetry from each
+matching address and uses the address that sends data for subsequent commands.
 
 ### Why `pad_to: 256` for the ILTM
 
