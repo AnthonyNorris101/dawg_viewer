@@ -2,6 +2,8 @@
 
 These practices apply to all work in this repository.
 
+Before performing any write action on GitHub or Linear, show me the exact proposed action and content and wait for my explicit approval. This includes creating or editing PRs, issues, reviews, comments, labels, assignments, statuses, and responding to messages. Read-only inspection is allowed without approval. A general request to investigate or prepare work is not approval to publish it.
+
 ## Before changing code
 
 - Read the relevant implementation, tests, and nearby documentation first.
