@@ -10,7 +10,6 @@ import { colorFor, onLiveFrame, startLive, store, useChannels, useInfo } from '.
 import { LiveMap } from '../live/LiveMap'
 import { LivePlotPanel } from '../live/LivePlotPanel'
 import { PinnedCards } from '../live/PinnedCards'
-import { loadCards, saveCards, type CardItem } from '../live/cardLayout'
 import { StatusHeader } from '../live/StatusHeader'
 import { liveSync, resumeFollow, showWindow, useFollow } from '../live/follow'
 import { layoutReducer, makeLayout } from '../state/layout'
@@ -22,7 +21,6 @@ import {
 } from '../state/liveBento'
 import type { LiveLayoutMode } from '../settings/liveLayout'
 import { toolbarButton, toolbarButtonActive } from '../ui'
-import type { PlotLayoutMode } from '../settings/plotLayout'
 
 const initialLayout = makeLayout([
   ['RPM', 'TPS1'],
@@ -48,59 +46,7 @@ export function LiveView({ layoutMode = 'default' }: { layoutMode?: LiveLayoutMo
   const info = useInfo()
   const channels = useChannels()
   const metas = info?.channels ?? NO_METAS
-  const profile = info?.active ?? ''
-  const [cardState, setCardState] = useState<{ profile: string; cards: CardItem[] }>(() => ({
-    profile,
-    cards: loadCards(profile, metas),
-  }))
-  const cards = cardState.profile === profile ? cardState.cards : loadCards(profile, metas)
-  const [editingCards, setEditingCards] = useState(false)
-  const cardsRef = useRef<HTMLDivElement>(null)
-  const listRef = useRef<HTMLElement>(null)
-  const [layout, dispatch] = useReducer(layoutReducer, profile, (p) =>
-    loadPlotLayout(p, initialLayout),
-  )
-  const layoutProfileRef = useRef(profile)
-  if (cardState.profile !== profile) {
-    setCardState({ profile, cards: loadCards(profile, metas) })
-    setEditingCards(false)
-  }
-  useEffect(() => {
-    if (layoutProfileRef.current !== profile) {
-      layoutProfileRef.current = profile
-      dispatch({ type: 'setLayout', layout: loadPlotLayout(profile, initialLayout) })
-      return
-    }
-    savePlotLayout(profile, layout)
-  }, [profile, layout])
-  useEffect(() => {
-    if (!editingCards) return
-    const finish = (event: PointerEvent) => {
-      if (
-        cardsRef.current?.contains(event.target as Node) ||
-        listRef.current?.contains(event.target as Node)
-      )
-        return
-      saveCards(profile, cards)
-      setEditingCards(false)
-    }
-    document.addEventListener('pointerdown', finish)
-    const finishKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' || (event.key === 'Enter' && event.target === cardsRef.current)) {
-        saveCards(profile, cards)
-        setEditingCards(false)
-      }
-    }
-    document.addEventListener('keydown', finishKey)
-    return () => {
-      document.removeEventListener('pointerdown', finish)
-      document.removeEventListener('keydown', finishKey)
-    }
-  }, [editingCards, cards, profile])
-  const updateCards = (next: CardItem[]) => {
-    setCardState({ profile, cards: next })
-    saveCards(profile, next)
-  }
+  const [layout, dispatch] = useReducer(layoutReducer, initialLayout)
   const activePanel = layout.panels.find((p) => p.id === layout.activeId)
 
   const { follow, windowS } = useFollow()
@@ -176,12 +122,6 @@ export function LiveView({ layoutMode = 'default' }: { layoutMode?: LiveLayoutMo
       <StatusHeader />
       <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <ChannelList
-          listRef={listRef}
-          cardEditMode={editingCards}
-          onSelectCard={(name) => {
-            if (!cards.some((card) => card.name === name))
-              updateCards([...cards, { name, wide: false }])
-          }}
           channels={listChannels}
           selectedIds={activePanel?.channelIds ?? NO_CHANNELS}
           dispatch={dispatch}

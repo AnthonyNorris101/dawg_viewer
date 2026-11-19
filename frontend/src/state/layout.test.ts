@@ -3,45 +3,6 @@ import { layoutReducer, makeLayout } from './layout'
 import { defaultWorkbook, validWorkbook, workbookReducer } from './workbook'
 
 describe('layoutReducer', () => {
-  it('caps each time-series panel at seven streams without affecting other panels', () => {
-    const names = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
-    let layout = makeLayout([names, ['Other']])
-    expect(layout.panels[0].channelIds).toEqual(names.slice(0, 7))
-    layout = layoutReducer(layout, { type: 'toggleChannel', channelId: 'H' })
-    expect(layout.panels[0].channelIds).toEqual(names.slice(0, 7))
-    layout = layoutReducer(layout, { type: 'toggleChannel', channelId: 'A' })
-    layout = layoutReducer(layout, { type: 'toggleChannel', channelId: 'H' })
-    expect(layout.panels[0].channelIds).toEqual([...names.slice(1, 7), 'H'])
-    expect(layout.panels[1].channelIds).toEqual(['Other'])
-    localStorage.setItem(
-      'dawg.live-plots.v1',
-      JSON.stringify({ car: { ...layout, panels: [{ ...layout.panels[0], channelIds: names }] } }),
-    )
-    expect(loadPlotLayout('car', makeLayout([[]])).panels[0].channelIds).toEqual(names.slice(0, 7))
-  })
-  it('converts a multi-channel plot to a histogram of its first series', () => {
-    let layout = makeLayout([['RPM', 'TPS1', 'VSS']])
-    layout = layoutReducer(layout, { type: 'setGraphType', panelId: 1, graphType: 'histogram' })
-    expect(layout.panels[0].channelIds).toEqual(['RPM'])
-    expect(layout.panels[0].graph).toMatchObject({ type: 'histogram', bins: 30 })
-    layout = layoutReducer(layout, { type: 'toggleChannel', channelId: 'CLT1' })
-    expect(layout.panels[0].channelIds).toEqual(['CLT1'])
-    layout = layoutReducer(layout, { type: 'setGraphType', panelId: 1, graphType: 'timeSeries' })
-    expect(layout.panels[0].channelIds).toEqual(['CLT1'])
-  })
-
-  it('loads legacy layouts and validates histogram settings', () => {
-    const layout = makeLayout([['RPM', 'TPS1']])
-    savePlotLayout('legacy', layout)
-    expect(loadPlotLayout('legacy', makeLayout([[]])).panels[0].graph).toBeUndefined()
-    const histogram = layoutReducer(layout, {
-      type: 'setGraphType',
-      panelId: 1,
-      graphType: 'histogram',
-    })
-    savePlotLayout('histogram', histogram)
-    expect(loadPlotLayout('histogram', makeLayout([[]])).panels[0]).toEqual(histogram.panels[0])
-  })
   it('keeps channel selection in the active panel', () => {
     let layout = makeLayout([['RPM'], ['TPS1']])
     layout = layoutReducer(layout, { type: 'setActive', panelId: 2 })

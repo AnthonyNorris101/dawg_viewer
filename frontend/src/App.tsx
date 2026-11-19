@@ -13,7 +13,6 @@ import { LogsView } from './views/LogsView'
 import { SettingsView } from './views/SettingsView'
 import { loadLiveLayoutMode, saveLiveLayoutMode, type LiveLayoutMode } from './settings/liveLayout'
 import { ViewerView } from './views/ViewerView'
-import { loadPlotLayoutMode, savePlotLayoutMode, type PlotLayoutMode } from './settings/plotLayout'
 
 type Tab = 'live' | 'logs' | 'viewer' | 'car' | 'settings'
 

@@ -77,10 +77,7 @@ export const ChannelList = memo(function ChannelList({
   }, [hovered])
 
   return (
-    <aside
-      ref={listRef}
-      className="flex w-60 max-w-[30%] shrink-0 flex-col overflow-hidden border-r border-zinc-800 bg-zinc-900/40"
-    >
+    <aside className="flex w-60 shrink-0 flex-col border-r border-zinc-800 bg-zinc-900/40">
       <div className="border-b border-zinc-800 p-2">
         <input
           aria-label="Filter channels"

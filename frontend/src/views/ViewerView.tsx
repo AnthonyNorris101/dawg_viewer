@@ -58,7 +58,7 @@ export function ViewerView({
   onStopLive,
 }: Props) {
   return (
-    <div className="flex h-full min-w-0 flex-col overflow-hidden">
+    <div className="flex h-full flex-col">
       {session ? (
         <LoadedLog
           key={session.path}

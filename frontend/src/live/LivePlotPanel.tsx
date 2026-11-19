@@ -8,13 +8,8 @@ import type { BentoSize } from '../state/liveBento'
 import { colorFor, onLiveFrame, store } from './connection'
 import { formatValue } from './format'
 
-type ResizeEdge = 'left' | 'right' | 'bottom' | 'corner'
-
 interface Props {
   panel: Panel
-  panels?: Panel[]
-  slotted?: boolean
-  layoutMode: PlotLayoutMode
   index: number
   active: boolean
   known: ReadonlySet<string>
@@ -31,27 +26,8 @@ function plotData(names: string[]): uPlot.AlignedData {
   return [store.times(), ...names.map((n) => store.column(n) ?? new Float64Array(store.length))]
 }
 
-const histogramSources = new Map<
-  string,
-  { data: () => { time: Float64Array; values: Float64Array }; subscribe: typeof store.subscribe }
->()
-function liveHistogramSource(name: string) {
-  let source = histogramSources.get(name)
-  if (!source) {
-    source = {
-      data: () => ({ time: store.times(), values: store.column(name) ?? new Float64Array(0) }),
-      subscribe: (fn) => store.subscribe(fn),
-    }
-    histogramSources.set(name, source)
-  }
-  return source
-}
-
 export const LivePlotPanel = memo(function LivePlotPanel({
   panel,
-  panels,
-  slotted = false,
-  layoutMode,
   index,
   active,
   known,
@@ -63,29 +39,17 @@ export const LivePlotPanel = memo(function LivePlotPanel({
   size,
   onSize,
 }: Props) {
-  useStreamColors()
-  const sectionRef = useRef<HTMLElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
   const plotRef = useRef<MountedPlot | null>(null)
   const valueEls = useRef(new Map<string, HTMLSpanElement>())
-  const [activeEdge, setActiveEdge] = useState<ResizeEdge | null>(null)
-
-  const totalPanels = panels?.length ?? 2
-  const colSpan = panelColSpan(panel, totalPanels)
-  const widthPct = panelWidthPct(panel, totalPanels)
-  const rowSpan = panelRowSpan(panel)
-  const heightPx = panelHeightPx(panel) ?? rowSpan * DEFAULT_ROW_HEIGHT
-  const prevId = panels && index > 0 ? panels[index - 1]?.id : undefined
-  const nextId = panels && index < panels.length - 1 ? panels[index + 1]?.id : undefined
 
   const namesKey = panel.channelIds.filter((n) => known.has(n)).join('\n')
   const names = useMemo(() => (namesKey ? namesKey.split('\n') : []), [namesKey])
   const waiting = panel.channelIds.filter((n) => !known.has(n))
 
-  const colorsKey = names.map(colorFor).join(',')
   useEffect(() => {
     const host = hostRef.current
-    if (!host || names.length === 0 || panel.graph?.type === 'histogram') return
+    if (!host || names.length === 0) return
 
     let cursorIdx: number | null = null
     const showValues = () => {
@@ -235,101 +199,17 @@ export const LivePlotPanel = memo(function LivePlotPanel({
         </button>
       </header>
 
-      <GraphBody panel={panel} dispatch={dispatch}>
-        <div
-          draggable
-          onDragStart={blockDrag}
-          className="relative h-full min-h-0 min-w-0 overflow-hidden"
-        >
-          {names.length === 0 ? (
-            <p className="absolute inset-0 grid place-items-center text-sm text-zinc-600">
-              {waiting.length > 0
-                ? `Waiting for ${waiting.join(', ')} from the device`
-                : 'Pick channels from the list to plot them here'}
-            </p>
-          ) : panel.graph?.type === 'histogram' ? (
-            <Histogram
-              key={names[0]}
-              source={liveHistogramSource(names[0])}
-              sync={sync}
-              bins={panel.graph.bins}
-              name={metas[names[0]]?.label || names[0]}
-              unit={metas[names[0]]?.unit || ''}
-              color={colorFor(names[0])}
-              valueRange={panel.graph.valueRange}
-              orientation={panel.graph.orientation}
-              frequency={panel.graph.frequency}
-              frequencyMax={panel.graph.frequencyMax}
-            />
-          ) : (
-            <div ref={hostRef} className="absolute inset-0" />
-          )}
-        </div>
-      </GraphBody>
-
-      {layoutMode === 'bento' && (
-        <>
-          {/* Left edge drag handle */}
-          <div
-            role="separator"
-            aria-label={`Drag left edge of plot ${index + 1}`}
-            data-edge="left"
-            title="Drag edge to dynamically resize width"
-            draggable
-            onDragStart={blockDrag}
-            onPointerDown={startEdgeResize('left')}
-            onDoubleClick={() => dispatch({ type: 'togglePanelWidth', panelId: panel.id })}
-            className={`absolute top-0 bottom-2 left-0 z-10 w-2 cursor-ew-resize transition-colors hover:bg-red-500/40 ${
-              activeEdge === 'left' ? 'bg-red-500/60' : ''
-            }`}
-          />
-
-          {/* Right edge drag handle */}
-          <div
-            role="separator"
-            aria-label={`Drag right edge of plot ${index + 1}`}
-            data-edge="right"
-            title="Drag edge to dynamically resize width"
-            draggable
-            onDragStart={blockDrag}
-            onPointerDown={startEdgeResize('right')}
-            onDoubleClick={() => dispatch({ type: 'togglePanelWidth', panelId: panel.id })}
-            className={`absolute top-0 right-0 bottom-2 z-10 w-2 cursor-ew-resize transition-colors hover:bg-red-500/40 ${
-              activeEdge === 'right' ? 'bg-red-500/60' : ''
-            }`}
-          />
-
-          {/* Bottom edge drag handle */}
-          <div
-            role="separator"
-            aria-label={`Drag bottom edge of plot ${index + 1}`}
-            data-edge="bottom"
-            title="Drag edge to dynamically resize height"
-            draggable
-            onDragStart={blockDrag}
-            onPointerDown={startEdgeResize('bottom')}
-            onDoubleClick={() => dispatch({ type: 'togglePanelHeight', panelId: panel.id })}
-            className={`absolute right-2 bottom-0 left-0 z-10 h-2 cursor-ns-resize transition-colors hover:bg-red-500/40 ${
-              activeEdge === 'bottom' ? 'bg-red-500/60' : ''
-            }`}
-          />
-
-          {/* Bottom-right corner drag handle */}
-          <div
-            role="separator"
-            aria-label={`Resize plot ${index + 1}`}
-            data-edge="corner"
-            title="Drag corner to dynamically resize plot"
-            draggable
-            onDragStart={blockDrag}
-            onPointerDown={startEdgeResize('corner')}
-            onDoubleClick={() => dispatch({ type: 'togglePanelWidth', panelId: panel.id })}
-            className={`absolute right-0 bottom-0 z-20 size-3.5 cursor-nwse-resize border-r-2 border-b-2 transition-colors hover:border-red-500 ${
-              activeEdge === 'corner' ? 'border-red-500 bg-red-500/30' : 'border-zinc-600'
-            }`}
-          />
-        </>
-      )}
+      <div className="relative min-h-0 flex-1">
+        {names.length === 0 ? (
+          <p className="absolute inset-0 grid place-items-center text-sm text-zinc-600">
+            {waiting.length > 0
+              ? `Waiting for ${waiting.join(', ')} from the device`
+              : 'Pick channels from the list to plot them here'}
+          </p>
+        ) : (
+          <div ref={hostRef} className="absolute inset-0" />
+        )}
+      </div>
     </section>
   )
 })

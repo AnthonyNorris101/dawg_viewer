@@ -8,9 +8,6 @@ import { PanelFrame, PlotTools } from './PanelFrame'
 
 interface Props {
   panel: Panel
-  panels?: Panel[]
-  slotted?: boolean
-  layoutMode: PlotLayoutMode
   index: number
   active: boolean
   session: Session
@@ -24,9 +21,6 @@ const NO_VALUE = '–'
 
 export const PlotPanel = memo(function PlotPanel({
   panel,
-  panels,
-  slotted = false,
-  layoutMode,
   index,
   active,
   session,
@@ -35,20 +29,9 @@ export const PlotPanel = memo(function PlotPanel({
   dispatch,
   extraChannels,
 }: Props) {
-  useStreamColors()
-  const sectionRef = useRef<HTMLElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
   const plotRef = useRef<MountedPlot | null>(null)
   const valueEls = useRef(new Map<string, HTMLSpanElement>())
-  const [activeEdge, setActiveEdge] = useState<ResizeEdge | null>(null)
-
-  const totalPanels = panels?.length ?? 2
-  const colSpan = panelColSpan(panel, totalPanels)
-  const widthPct = panelWidthPct(panel, totalPanels)
-  const rowSpan = panelRowSpan(panel)
-  const heightPx = panelHeightPx(panel) ?? rowSpan * DEFAULT_ROW_HEIGHT
-  const prevId = panels && index > 0 ? panels[index - 1]?.id : undefined
-  const nextId = panels && index < panels.length - 1 ? panels[index + 1]?.id : undefined
 
   const channels = useMemo(
     () =>
@@ -74,7 +57,6 @@ export const PlotPanel = memo(function PlotPanel({
   )
   const structure = useMemo(() => JSON.parse(seriesKey) as PlotSeries[], [seriesKey])
 
-  const colorsKey = panel.channelIds.map(streamColor).join(',')
   useEffect(() => {
     const host = hostRef.current
     if (!host || structure.length === 0) return

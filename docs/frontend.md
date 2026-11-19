@@ -132,35 +132,9 @@ widget (`ageColor` in `live/format.ts`).
 
 ## Layout (state/layout.ts)
 
-A reducer owns the list of plot panels and which one is active. Full-size mode
-is the default and renders the panels sequentially using the original layout.
-The Settings tab can switch both Live and Viewer to bento mode. In that mode,
-panels use saved grid slots, width spans and height spans. `PlotStack` and
-`plotSlots.ts` preview drag destinations, move panels into empty space, swap
-occupied slots, and shift stacked panels when a tall panel is placed. Edge and
-corner handles resize bento panels. Removing the last panel empties it instead,
-so there is always one.
-
-Layouts are stored under `dawg.live-plots.v3`, keyed by device profile. The
-loader migrates both the older bento v1 data and row-based v2 data while
-preserving panel channels and graph settings. The global rendering preference
-is stored separately under `dawg.plot-layout-mode.v1`; missing or invalid
-values select full-size mode.
-
-Right-clicking the graph body opens the graph type menu. A histogram keeps the
-first selected channel when converted from a multi-channel time series; new
-channel selections replace it. Histograms count finite values in the shared
-time range and redraw as live data or the range changes. The bin count is
-configurable in the same menu. Live counts use the store's forward-filled
-rows, so they count displayed samples rather than raw channel updates.
-
-The plot settings popover also lists every selected stream with a global color
-override. Color changes are stored under `dawg.stream-colors.v1` and update
-both Live and Viewer plots. Histograms can use a custom value range, horizontal
-orientation, percentages, and a manual frequency-axis maximum.
-The color picker offers the original ten channel colors plus a hex field.
-The live histogram header subscribes to the store so its channel value keeps
-updating even though the histogram renderer has no time-series cursor.
+A reducer for the list of plot panels and which one is active. Untouched
+panels keep their object identity so memoised plots don't rebuild. Removing
+the last panel empties it instead, so there's always one.
 
 ## Tabs (App.tsx)
 

@@ -3,7 +3,7 @@ import { Events } from '@wailsio/runtime'
 import type { Channel, Status } from '../../bindings/dawg_viewer/internal/live/models'
 import type { Info } from '../../bindings/dawg_viewer/services/models'
 import { LiveService } from '../../bindings/dawg_viewer/services'
-import { streamColor } from '../data/streamColors'
+import { CHANNEL_COLORS } from '../data/session'
 import { LiveStore } from './store'
 
 const MAX_RATE_HZ = 60
@@ -55,6 +55,8 @@ export const status = observable<Status>(EMPTY_STATUS)
 export const testMode = observable(false)
 export const channels = observable<Channel[]>([])
 export const info = observable<Info | null>(null)
+
+const colors = new Map<string, string>()
 
 export function colorFor(name: string): string {
   const custom = info.get()?.channels?.[name]?.color
