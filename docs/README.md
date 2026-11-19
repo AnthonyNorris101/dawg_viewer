@@ -1,21 +1,44 @@
-# Documentation
+# Dawg Viewer technical overview
 
-## Using Dawg Viewer
+This page is the technical entry point to the repository documentation. For installation and application workflows, start with the [user-facing README](../README.md) and [user guide](user-guide.md). Contributors should start with [CONTRIBUTING.md](../CONTRIBUTING.md), which collects the development workflow and contributor references.
 
-| Guide | Covers |
+## System at a glance
+
+Dawg Viewer is a Wails desktop application. The Go backend owns device networking, configuration, log decoding, and file delivery. The React and TypeScript frontend owns live presentation, Viewer state, and numerical analysis. Wails generated bindings expose service calls; Wails events carry live frames and status.
+
+```text
+logger ── UDP / discovery / TCP ──> Go services ── Wails events and calls ──> React UI
+                                     │                                  │
+                                     └── log decode and transfer ───────┘
+```
+
+The live pipeline decodes sparse telemetry packets into named and calibrated rows, then batches rows into frames. The frontend turns those rows into channel columns for plots and readouts. Logs follow a separate path through decoding or CSV loading and are delivered to the Viewer as typed columns. See [architecture](architecture.md) for timing, concurrency, and memory ownership.
+
+## Repository map
+
+| Path | Responsibility |
 |---|---|
-| [User guide](user-guide.md) | Live telemetry, logs, Viewer analysis, worksheets, and setups |
-| [Configuration](configuration.md) | Settings, device profiles, calibration, and saved setups |
-| [Device protocol](device-protocol.md) | Telemetry, discovery, commands, and logger file downloads |
+| `main.go` | Application startup, embedded frontend assets, Wails service registration |
+| `services/` | Wails boundary and orchestration for live data, logs, and setups |
+| `internal/link/`, `internal/itv/`, `internal/live/` | Network I/O, wire decoding, and live session processing |
+| `internal/config/`, `internal/calib/` | User configuration, device profiles, and calibration |
+| `internal/logfile/`, `internal/logdata/`, `internal/fileserver/` | Log conversion, column encoding, one-time transfer, and logger downloads |
+| `frontend/src/live/`, `frontend/src/plot/` | Live store, refresh behavior, and plot lifecycle |
+| `frontend/src/analysis/`, `frontend/src/viewer/` | Pure analysis stages and Viewer orchestration |
+| `cmd/` | Logger simulator and version management tools |
+| `docs/` | User, protocol, architecture, and development references |
 
-## Project and development
+The package-level backend guide is [backend.md](backend.md); the frontend guide is [frontend.md](frontend.md).
 
-| Guide | Covers |
-|---|---|
-| [Architecture](architecture.md) | System boundaries, data flow, concurrency, and memory ownership |
-| [Backend](backend.md) | Go packages, services, and log processing |
-| [Frontend](frontend.md) | React application structure, live rendering, and Viewer analysis |
-| [Development](development.md) | Toolchain, simulator, tests, CI, builds, and releases |
-| [AI documentation guidelines](ai-documentation-guidelines.md) | How AI contributors keep project documentation current |
+## Interfaces and references
 
-For setup and contribution expectations, start with the repository's [contribution guide](../CONTRIBUTING.md).
+- [Device protocol](device-protocol.md): telemetry fields, discovery, command sync, and SD-card log format.
+- [Configuration](configuration.md): YAML settings, device profiles, calibration, and saved setups.
+- [Architecture](architecture.md): data flow, concurrency boundaries, clock alignment, and CSV transfer constraints.
+- [Frontend](frontend.md): update model, plot lifecycle, Viewer analysis, and module ownership.
+- [Backend](backend.md): Go services and package responsibilities.
+- [Development](development.md): toolchain, simulator, tests, CI, packaging, and versioning.
+
+## Technical constraints
+
+The logger sends sparse channel updates; missing values in a packet retain their previous value in the live store. Device timestamps are used when available, with arrival time as fallback. The backend retains only pending live rows; the frontend owns the live history. Imported logs are still processed in memory, although Go streams encoded columns in chunks to avoid a second full encoded matrix. See [architecture](architecture.md) and [backend](backend.md) for details and limits.

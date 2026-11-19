@@ -1,43 +1,29 @@
 # Dawg Viewer
 
-Dawg Viewer is a desktop telemetry and log analysis application for UGA Motorsports. It connects to the team's ILTM logger over a local network and runs on Windows, macOS, and Linux.
+Dawg Viewer is a desktop telemetry and log analysis app for UGA Motorsports. Connect to the team's ILTM logger over a local network, follow live vehicle data, or open recordings for deeper analysis. It runs on Windows, macOS, and Linux.
 
-## Features
+## Start using Dawg Viewer
 
-- Monitor live telemetry with configurable plots, pinned channels, a track map, and lap timing.
-- Download and open logger recordings, then analyze laps, compare runs, and build worksheets.
-- Use signal math, filtering, calibration, spectrum, launch, and aerodynamic analysis tools.
-- Try the app without a logger using Test Mode or the included logger simulator.
+Download the latest version from [GitHub Releases](https://github.com/UGA-Motorsports-FSAE-IC/dawg_viewer/releases). Join the logger's Wi-Fi or local network, open Dawg Viewer, and choose the device in the Live tab. If your computer asks for network permission, allow Dawg Viewer to receive traffic.
 
-## Get started
+Choose **Test mode** from the top bar to explore with simulated live data and a sample outing. You do not need a logger for this mode.
 
-Download the latest package from [GitHub Releases](https://github.com/UGA-Motorsports-FSAE-IC/dawg_viewer/releases). Join the logger's network, start Dawg Viewer, and select the device in the Live tab. The first launch may ask for permission to receive network traffic.
+### Follow live data
 
-To explore without a logger, start the app and choose **Test mode**. For detailed Live and Viewer workflows, see the [user guide](docs/user-guide.md).
+The Live tab displays incoming channels and pinned values. Choose channels from the list to add them to a plot. Scroll over a plot to zoom, use Shift+scroll to pan, or drag over a range to zoom in. Select **Resume live** to return to the newest data. Use **Track map** to see the vehicle's position and lap timing.
 
-## Configuration
+### Open and explore a recording
 
-Configuration is stored as editable YAML. Use **Open config folder** in the app to find it. The [configuration guide](docs/configuration.md) explains device profiles and settings; the [device protocol](docs/device-protocol.md) describes how to connect another logger or relay.
+Open a local recording in the Viewer, or use the Logs tab to download one from the logger. Organize plots on worksheets, choose laps from a start/finish line or manual marks, and overlay laps by distance. Add the Time slip channel to compare pace through a lap.
 
-## Development
+The Viewer also includes XY and histogram plots, track maps, statistics, signal math, filtering, spectrum, launch and aero analysis, and saved setups. The [user guide](docs/user-guide.md) walks through these tools in more detail.
 
-Install Go, Node.js, the Wails v3 CLI, and [just](https://just.systems), then run:
+### Adjust settings
 
-```sh
-just install
-just simulate
-```
+Use **Open config folder** to edit settings or device profiles as YAML. The app can store a portable `dawg_config` folder next to the program; otherwise it uses your operating system's user configuration folder. See the [configuration guide](docs/configuration.md) for paths and options.
 
-`just simulate` runs the desktop app with simulated logger data. Run `just` to list commands and `just test` for the standard Go and frontend checks. See the [development guide](docs/development.md) and [contribution guide](CONTRIBUTING.md) for details.
+For another logger or a relay, see the [device protocol](docs/device-protocol.md). Close other telemetry applications before launching Dawg Viewer because only one application can listen on the telemetry port at a time.
 
-## Project layout
+## Contributing and technical references
 
-```text
-cmd/                 Simulator and version tools
-internal/            Protocol, logging, configuration, and analysis support
-services/            Wails services exposed to the frontend
-frontend/src/         React and TypeScript application
-docs/                 User, architecture, protocol, and development documentation
-```
-
-The [documentation index](docs/README.md) links to the full guides. Architecture details are in [docs/architecture.md](docs/architecture.md).
+The [contribution guide](CONTRIBUTING.md) is the main contributor entry point. It links to setup, testing, development, documentation standards, and the technical references. For a system overview, see the [technical documentation](docs/README.md).
