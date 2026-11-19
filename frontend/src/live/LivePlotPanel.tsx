@@ -1,25 +1,11 @@
-import { memo, useEffect, useMemo, useRef, useState, type Dispatch } from 'react'
+import { memo, useEffect, useMemo, useRef, type Dispatch, type DragEvent } from 'react'
 import type uPlot from 'uplot'
 import type { ChannelMeta } from '../../bindings/dawg_viewer/internal/config/models'
-import { mountPlot } from '../plot/mountPlot'
-import { Histogram } from '../plot/HistogramGraph'
-import { GraphBody } from '../components/GraphBody'
-import { useStreamColors } from '../data/streamColors'
+import { mountPlot, type MountedPlot } from '../plot/mountPlot'
 import type { ViewSync } from '../plot/sync'
-import {
-  DEFAULT_ROW_HEIGHT,
-  computeEdgeResize,
-  panelColSpan,
-  panelHeightPx,
-  panelRowSpan,
-  panelWidthPct,
-  setPlotDrag,
-  type LayoutAction,
-  type Panel,
-} from '../state/layout'
-import { bentoPanelClass, fullSizePanelClass, panelWidthStyle } from '../ui'
-import type { PlotLayoutMode } from '../settings/plotLayout'
-import { colorFor, store } from './connection'
+import type { LayoutAction, Panel } from '../state/layout'
+import type { BentoSize } from '../state/liveBento'
+import { colorFor, onLiveFrame, store } from './connection'
 import { formatValue } from './format'
 
 type ResizeEdge = 'left' | 'right' | 'bottom' | 'corner'
@@ -35,6 +21,10 @@ interface Props {
   metas: Record<string, ChannelMeta | undefined>
   sync: ViewSync
   dispatch: Dispatch<LayoutAction>
+  bento?: boolean
+  startDrag?: (event: DragEvent<HTMLElement>) => void
+  size?: BentoSize
+  onSize?: (size: BentoSize) => void
 }
 
 function plotData(names: string[]): uPlot.AlignedData {
@@ -68,10 +58,15 @@ export const LivePlotPanel = memo(function LivePlotPanel({
   metas,
   sync,
   dispatch,
+  bento = false,
+  startDrag,
+  size,
+  onSize,
 }: Props) {
   useStreamColors()
   const sectionRef = useRef<HTMLElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
+  const plotRef = useRef<MountedPlot | null>(null)
   const valueEls = useRef(new Map<string, HTMLSpanElement>())
   const [activeEdge, setActiveEdge] = useState<ResizeEdge | null>(null)
 
@@ -117,118 +112,40 @@ export const LivePlotPanel = memo(function LivePlotPanel({
       },
     })
     showValues()
-    const off = store.subscribe(() => {
-      plot.u.setData(plotData(names), false)
+    const off = onLiveFrame(() => {
+      plot.update(plotData(names))
       showValues()
     })
+    plotRef.current = plot
     return () => {
+      plotRef.current = null
       off()
       plot.destroy()
     }
-  }, [names, metas, sync, panel.graph?.type, colorsKey])
+  }, [names, metas, sync])
 
+  const spikeFree = !panel.fullY
   useEffect(() => {
-    if (panel.graph?.type !== 'histogram' || names.length === 0) return
-    const showLatest = () => {
-      for (const name of names) {
-        const el = valueEls.current.get(name)
-        if (el) el.textContent = formatValue(store.latest(name), metas[name])
-      }
-    }
-    showLatest()
-    return store.subscribe(showLatest)
-  }, [panel.graph?.type, names, metas])
-
-  const startEdgeResize = (edge: ResizeEdge) => (event: React.PointerEvent<HTMLDivElement>) => {
-    event.preventDefault()
-    event.stopPropagation()
-    const startX = event.clientX
-    const startY = event.clientY
-    const startCol = colSpan
-    const startRow = rowSpan
-    const startWidthPct = widthPct
-    const rect = sectionRef.current?.getBoundingClientRect()
-    const startHeightPx = rect && rect.height > 0 ? rect.height : heightPx
-    const containerWidthPx =
-      (slotted
-        ? sectionRef.current?.parentElement?.parentElement
-        : sectionRef.current?.parentElement
-      )?.clientWidth ?? 0
-
-    setActiveEdge(edge)
-
-    const onMove = (moveEvent: PointerEvent) => {
-      const dx = moveEvent.clientX - startX
-      const dy = moveEvent.clientY - startY
-      const next = computeEdgeResize(edge, dx, dy, startCol, startRow, {
-        startWidthPct,
-        startHeightPx,
-        containerWidthPx,
-      })
-      if (sectionRef.current) {
-        if (next.widthPct !== undefined) {
-          sectionRef.current.style.width = slotted ? '100%' : panelWidthStyle(next.widthPct)
-        }
-        if (next.height !== undefined) {
-          sectionRef.current.style.height = `${next.height}px`
-        }
-      }
-      dispatch({
-        type: 'resizePanel',
-        panelId: panel.id,
-        colSpan: next.colSpan,
-        rowSpan: next.rowSpan,
-        widthPct: next.widthPct,
-        height: next.height,
-      })
-    }
-    const onUp = () => {
-      setActiveEdge(null)
-      document.removeEventListener('pointermove', onMove)
-      document.removeEventListener('pointerup', onUp)
-    }
-    document.addEventListener('pointermove', onMove)
-    document.addEventListener('pointerup', onUp)
-  }
-
-  const blockDrag = (event: React.DragEvent) => {
-    event.preventDefault()
-    event.stopPropagation()
-  }
+    plotRef.current?.setSpikeFree(spikeFree)
+  }, [spikeFree, names, metas, sync])
+  useEffect(
+    () => plotRef.current?.setYBounds(panel.yBounds ?? {}),
+    [panel.yBounds, names, metas, sync],
+  )
 
   return (
     <section
-      ref={sectionRef}
-      aria-label={`Plot ${index + 1}`}
-      data-panel-id={panel.id}
-      draggable={layoutMode === 'bento' && activeEdge === null}
-      style={
-        layoutMode === 'bento'
-          ? {
-              width: slotted ? '100%' : panelWidthStyle(widthPct),
-              height: `${heightPx}px`,
-            }
-          : undefined
-      }
-      onDragStart={(event) => {
-        if (layoutMode !== 'bento' || activeEdge !== null) {
-          event.preventDefault()
-          return
-        }
-        setPlotDrag(panel.id, index)
-        if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
-      }}
-      className={
-        layoutMode === 'bento'
-          ? bentoPanelClass(active, colSpan, rowSpan)
-          : fullSizePanelClass(active)
-      }
+      className={`flex min-w-0 flex-1 flex-col overflow-hidden border-l-2 bg-zinc-950 ${bento ? 'h-full min-h-0' : 'min-h-[17rem]'} ${
+        active ? 'border-red-500' : 'border-transparent'
+      }`}
       onPointerDown={() => dispatch({ type: 'setActive', panelId: panel.id })}
+      data-panel-id={panel.id}
     >
-      <header className="flex items-center gap-2 border-b border-zinc-800 px-3 py-1 text-xs">
+      <header className="flex items-center gap-3 border-b border-zinc-800 px-3 py-1 text-xs">
         <span
-          className={`shrink-0 text-zinc-500 ${layoutMode === 'bento' ? 'cursor-grab' : ''}`}
-          title={layoutMode === 'bento' ? 'Drag to move plot' : undefined}
+          draggable={bento}
+          onDragStart={startDrag}
+          className={`shrink-0 text-zinc-500 ${bento ? 'cursor-grab' : ''}`}
         >
           Plot {index + 1}
         </span>
@@ -260,70 +177,62 @@ export const LivePlotPanel = memo(function LivePlotPanel({
             </li>
           ))}
         </ul>
-        <div className="flex shrink-0 items-center gap-1.5">
-          {layoutMode === 'bento' && panels && panels.length > 1 && (
-            <>
-              <button
-                type="button"
-                aria-label={`Move plot ${index + 1} left`}
-                disabled={prevId === undefined}
-                className="text-zinc-500 hover:text-zinc-200 disabled:opacity-30"
-                onClick={() => {
-                  const slot = panels?.[index - 1]?.slot
-                  if (slot) dispatch({ type: 'placePanel', panelId: panel.id, ...slot })
-                }}
-              >
-                ←
-              </button>
-              <button
-                type="button"
-                aria-label={`Move plot ${index + 1} right`}
-                disabled={nextId === undefined}
-                className="text-zinc-500 hover:text-zinc-200 disabled:opacity-30"
-                onClick={() => {
-                  const slot = panels?.[index + 1]?.slot
-                  if (slot) dispatch({ type: 'placePanel', panelId: panel.id, ...slot })
-                }}
-              >
-                →
-              </button>
-            </>
-          )}
-          {layoutMode === 'bento' && (
+        {bento && onSize && (
+          <div className="flex shrink-0 items-center gap-1">
             <button
               type="button"
-              aria-label={`Toggle plot ${index + 1} width`}
-              aria-pressed={colSpan === 2}
-              className={`rounded px-1 text-[11px] ${
-                colSpan === 2 ? 'bg-red-500/20 text-red-300' : 'text-zinc-500 hover:text-zinc-200'
-              }`}
-              onClick={() => dispatch({ type: 'togglePanelWidth', panelId: panel.id })}
+              aria-label={`Toggle height plot ${index + 1}`}
+              aria-pressed={size?.height === 'tall'}
+              className="rounded px-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+              onClick={() =>
+                onSize({
+                  width: size?.width ?? 'half',
+                  height: size?.height === 'tall' ? 'short' : 'tall',
+                })
+              }
             >
-              Wide
+              T
             </button>
-          )}
-          {layoutMode === 'bento' && (
             <button
               type="button"
-              aria-label={`Toggle plot ${index + 1} height`}
-              aria-pressed={rowSpan >= 2}
-              className={`rounded px-1 text-[11px] ${
-                rowSpan >= 2 ? 'bg-red-500/20 text-red-300' : 'text-zinc-500 hover:text-zinc-200'
-              }`}
-              onClick={() => dispatch({ type: 'togglePanelHeight', panelId: panel.id })}
+              aria-label={`Toggle width plot ${index + 1}`}
+              aria-pressed={size?.width === 'full'}
+              className="rounded px-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+              onClick={() =>
+                onSize({
+                  height: size?.height ?? 'short',
+                  width: size?.width === 'full' ? 'half' : 'full',
+                })
+              }
             >
-              Tall
+              W
             </button>
-          )}
-          <button
-            type="button"
-            aria-label={`Close plot ${index + 1}`}
-            className="text-zinc-600 hover:text-zinc-200"
-            onClick={() => dispatch({ type: 'removePanel', panelId: panel.id })}
-          >
-            ✕
-          </button>
-        </div>
+          </div>
+        )}
+        <button
+          type="button"
+          aria-pressed={spikeFree}
+          aria-label={`Ignore spikes when scaling plot ${index + 1}`}
+          title={
+            spikeFree
+              ? 'Y axis ignores the most extreme 0.1% of points. Click to fit every point.'
+              : 'Y axis fits every point. Click to ignore spikes.'
+          }
+          className={`shrink-0 ${spikeFree ? 'text-zinc-200' : 'text-zinc-600'} hover:text-zinc-100`}
+          onClick={() =>
+            dispatch({ type: 'setPanel', panelId: panel.id, patch: { fullY: spikeFree } })
+          }
+        >
+          ↕
+        </button>
+        <button
+          type="button"
+          aria-label={`Close plot ${index + 1}`}
+          className="shrink-0 text-zinc-600 hover:text-zinc-200"
+          onClick={() => dispatch({ type: 'removePanel', panelId: panel.id })}
+        >
+          ✕
+        </button>
       </header>
 
       <GraphBody panel={panel} dispatch={dispatch}>

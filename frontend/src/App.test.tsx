@@ -4,16 +4,36 @@ import userEvent from '@testing-library/user-event'
 import { openLog } from './viewer/openLog'
 import App from './App'
 
-vi.mock('./live/connection', () => ({ useInfo: () => null }))
+vi.mock('./live/connection', () => ({
+  useInfo: () => null,
+  setLiveShown: () => {},
+  useTestMode: () => false,
+}))
+vi.mock('./testmode/testMode', () => ({
+  startTestMode: vi.fn(),
+  stopTestMode: vi.fn(),
+  testSession: vi.fn(),
+  TEST_LOG_PATH: 'test',
+}))
 vi.mock('./viewer/openLog', () => ({ openLog: vi.fn(), pickAndOpenLog: vi.fn() }))
 vi.mock('./views/LiveView', () => ({
-  LiveView: ({ plotLayoutMode }: { plotLayoutMode: string }) => (
-    <div>Live dashboard: {plotLayoutMode}</div>
-  ),
+  LiveView: ({ layoutMode }: { layoutMode: string }) => <div>Live dashboard: {layoutMode}</div>,
 }))
 vi.mock('./views/LogsView', () => ({
-  LogsView: ({ onOpen }: { onOpen: (path: string) => void }) => (
-    <button onClick={() => onOpen('run.csv')}>Open downloaded log</button>
+  LogsView: ({ onOpen, opening }: { onOpen: (path: string) => void; opening: boolean }) => (
+    <>
+      <button disabled={opening} onClick={() => onOpen('run.csv')}>
+        Open downloaded log
+      </button>
+      <button
+        onClick={() => {
+          onOpen('first.csv')
+          onOpen('second.csv')
+        }}
+      >
+        Open two logs
+      </button>
+    </>
   ),
 }))
 vi.mock('./views/ViewerView', () => ({
@@ -27,10 +47,32 @@ vi.mock('./views/ViewerView', () => ({
 
 beforeEach(() => {
   vi.mocked(openLog).mockReset()
-  localStorage.clear()
 })
 
 describe('App navigation', () => {
+  it('opens the empty Settings page and returns to the mounted Live view', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: 'Settings' }))
+    expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Plot layout' }))
+    expect(screen.getByRole('menuitemradio', { name: 'default' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+    await user.click(screen.getByRole('menuitemradio', { name: 'bento' }))
+    expect(localStorage.getItem('dawg.live-layout-mode.v1')).toBe('bento')
+
+    await user.click(screen.getByRole('button', { name: 'Live' }))
+    expect(screen.getByText('Live dashboard: bento')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Settings' }))
+    await user.click(screen.getByRole('button', { name: 'Plot layout' }))
+    await user.click(screen.getByRole('menuitemradio', { name: 'default' }))
+    await user.click(screen.getByRole('button', { name: 'Live' }))
+    expect(screen.getByText('Live dashboard: default')).toBeVisible()
+  })
+
   it('opens a downloaded log in the viewer', async () => {
     const user = userEvent.setup()
     vi.mocked(openLog).mockResolvedValue({
@@ -50,24 +92,34 @@ describe('App navigation', () => {
     expect(openLog).toHaveBeenCalledWith('run.csv')
   })
 
-  it('defaults to full-size plots and saves the bento preference', async () => {
+  it('ignores another open request while a log is loading', async () => {
     const user = userEvent.setup()
+    const loadedSession = {
+      name: 'first.csv',
+      path: 'first.csv',
+      note: '',
+      sampleRate: 0,
+      time: new Float64Array(),
+      channels: [],
+      byId: new Map(),
+    }
+    let finish!: () => void
+    vi.mocked(openLog).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve(loadedSession)
+        }),
+    )
     render(<App />)
 
-    await user.click(screen.getByRole('button', { name: 'Settings' }))
-    expect(screen.getByRole('radio', { name: /Full-size plots/ })).toBeChecked()
-    await user.click(screen.getByRole('radio', { name: /Bento grid/ }))
-    expect(screen.getByRole('radio', { name: /Bento grid/ })).toBeChecked()
-    expect(localStorage.getItem('dawg.plot-layout-mode.v1')).toBe('bento')
-    await user.click(screen.getByRole('button', { name: 'Live' }))
-    expect(screen.getByText('Live dashboard: bento')).toBeInTheDocument()
-  })
+    await user.click(screen.getByRole('button', { name: 'Logs' }))
+    await user.click(screen.getByRole('button', { name: 'Open two logs' }))
+    expect(openLog).toHaveBeenCalledTimes(1)
+    expect(openLog).toHaveBeenCalledWith('first.csv')
+    expect(screen.getByRole('button', { name: 'Open downloaded log' })).toBeDisabled()
 
-  it('loads the saved bento preference', async () => {
-    localStorage.setItem('dawg.plot-layout-mode.v1', 'bento')
-    const user = userEvent.setup()
-    render(<App />)
-    await user.click(screen.getByRole('button', { name: 'Settings' }))
-    expect(screen.getByRole('radio', { name: /Bento grid/ })).toBeChecked()
+    finish()
+    expect(await screen.findByText('first.csv')).toBeInTheDocument()
+    expect(openLog).toHaveBeenCalledTimes(1)
   })
 })

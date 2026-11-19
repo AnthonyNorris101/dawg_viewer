@@ -41,5 +41,7 @@ export interface Status {
     "filtering": boolean;
     "ignored": IgnoredSender[] | null;
     "error": string;
+    "timing": string;
+    "lateRows": number;
     "startedAt": number;
 }

@@ -49,3 +49,56 @@ func TestLinear(t *testing.T) {
 		t.Fatal("div 0 should fail")
 	}
 }
+
+func TestPoly(t *testing.T) {
+	conv, err := Poly([]float64{1, 2, 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := conv(2); got != 1+4+12 {
+		t.Fatalf("poly(2) = %g", got)
+	}
+	if _, err := Poly(nil); err == nil {
+		t.Fatal("empty poly accepted")
+	}
+}
+
+func TestTable(t *testing.T) {
+	conv, err := Table([][2]float64{{1000, 10}, {0, 0}, {2000, 40}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range [][2]float64{{0, 0}, {500, 5}, {1000, 10}, {1500, 25}, {2000, 40}, {3000, 70}, {-1000, -10}} {
+		if got := conv(c[0]); math.Abs(got-c[1]) > 1e-9 {
+			t.Errorf("table(%g) = %g, want %g", c[0], got, c[1])
+		}
+	}
+	if _, err := Table([][2]float64{{1, 1}, {1, 2}}); err == nil {
+		t.Fatal("duplicate raw accepted")
+	}
+}
+
+func TestFitPoly(t *testing.T) {
+	want := []float64{-3.5, 0.02, 4e-6}
+	var pts [][2]float64
+	for x := 300.0; x <= 3800; x += 350 {
+		y := want[0] + want[1]*x + want[2]*x*x
+		pts = append(pts, [2]float64{x, y})
+	}
+	got, err := FitPoly(pts, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k := range want {
+		if math.Abs(got[k]-want[k]) > 1e-9*math.Max(1, math.Abs(want[k]))+1e-12 {
+			t.Errorf("coeff %d = %g, want %g", k, got[k], want[k])
+		}
+	}
+	line, err := FitPoly([][2]float64{{0, 1}, {1, 3}, {2, 5}, {3, 7.2}}, 1)
+	if err != nil || math.Abs(line[1]-2.06) > 1e-9 {
+		t.Fatalf("line fit = %v, %v", line, err)
+	}
+	if _, err := FitPoly(pts[:2], 2); err == nil {
+		t.Fatal("underdetermined fit accepted")
+	}
+}

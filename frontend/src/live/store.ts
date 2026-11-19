@@ -8,6 +8,7 @@ export class LiveStore {
   private cols = new Map<string, Float64Array>()
   private updatedAt = new Map<string, number>()
   private listeners = new Set<() => void>()
+  revision = 0
   length = 0
 
   constructor(private maxRows: number) {}
@@ -38,6 +39,7 @@ export class LiveStore {
       }
       this.length++
     }
+    this.revision++
     for (const fn of this.listeners) fn()
   }
 
@@ -47,6 +49,7 @@ export class LiveStore {
     this.cols.clear()
     this.updatedAt.clear()
     this.length = 0
+    this.revision++
     for (const fn of this.listeners) fn()
   }
 

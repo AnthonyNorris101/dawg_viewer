@@ -2,13 +2,8 @@ package services
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/binary"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"math"
-	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -22,6 +17,7 @@ import (
 
 	"dawg_viewer/internal/config"
 	"dawg_viewer/internal/fileserver"
+	"dawg_viewer/internal/logdata"
 	"dawg_viewer/internal/logfile"
 )
 
@@ -63,6 +59,7 @@ type ViewerChannel struct {
 
 type ViewerLog struct {
 	Name     string          `json:"name"`
+	Source   string          `json:"source"`
 	Path     string          `json:"path"`
 	Rows     int             `json:"rows"`
 	Note     string          `json:"note"`
@@ -88,49 +85,7 @@ type LogService struct {
 
 	mu       sync.Mutex
 	serverOn *deviceTarget
-	blobs    map[string][]byte
-}
-
-const logDataPath = "/logdata/"
-
-func LogDataMiddleware(s *LogService) application.Middleware {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			s.serveBlob(w, r, next)
-		})
-	}
-}
-
-func (s *LogService) serveBlob(w http.ResponseWriter, r *http.Request, next http.Handler) {
-	token, ok := strings.CutPrefix(r.URL.Path, logDataPath)
-	if !ok {
-		next.ServeHTTP(w, r)
-		return
-	}
-	s.mu.Lock()
-	blob, found := s.blobs[token]
-	delete(s.blobs, token)
-	s.mu.Unlock()
-	if !found {
-		http.NotFound(w, r)
-		return
-	}
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Length", strconv.Itoa(len(blob)))
-	w.Write(blob)
-}
-
-func (s *LogService) keepBlob(blob []byte) string {
-	var b [16]byte
-	rand.Read(b[:])
-	token := hex.EncodeToString(b[:])
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.blobs == nil || len(s.blobs) >= 2 {
-		s.blobs = map[string][]byte{}
-	}
-	s.blobs[token] = blob
-	return token
+	data     logdata.Store
 }
 
 func NewLogService(live *LiveService) *LogService {
@@ -138,6 +93,7 @@ func NewLogService(live *LiveService) *LogService {
 }
 
 func (s *LogService) ServiceShutdown() error {
+	s.data.Clear()
 	return s.FinishRemote()
 }
 
@@ -342,17 +298,7 @@ func (s *LogService) Load(path string) (*ViewerLog, error) {
 	}
 
 	rows := len(tab.TimeMS)
-	blob := make([]byte, 0, (len(tab.Columns)+1)*rows*8)
-	start := tab.TimeMS[0]
-	for _, ms := range tab.TimeMS {
-		blob = binary.LittleEndian.AppendUint64(blob, math.Float64bits((ms-start)/1000))
-	}
-	for _, col := range tab.Values {
-		for _, v := range col {
-			blob = binary.LittleEndian.AppendUint64(blob, math.Float64bits(v))
-		}
-	}
-	v := &ViewerLog{Name: filepath.Base(path), Path: path, Rows: rows, DataURL: logDataPath + s.keepBlob(blob)}
+	v := &ViewerLog{Name: filepath.Base(path), Source: string(source), Path: path, Rows: rows, DataURL: s.data.Add(tab)}
 	if source != logfile.SourceWide {
 		hz := opts.Hz
 		if hz <= 0 {

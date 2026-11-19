@@ -2,8 +2,8 @@
 
 Dawg Viewer is one desktop program with two halves:
 
-- a **Go backend** that does all networking, decoding and state, and
-- a **React frontend** that only displays.
+- a **Go backend** that owns networking, decoding, device configuration, and log loading, and
+- a **React frontend** that owns viewer state, numerical analysis, and rendering.
 
 They talk through Wails: the frontend calls Go methods, and Go pushes events
 to the frontend.
@@ -38,15 +38,18 @@ From wire to screen, data takes these shapes:
 
    ```go
    type Row struct {
-       T float64            // seconds since the session started, laptop clock
+       T float64            // seconds since the session started (see timing below)
        V map[string]float64 // channel name → value, only channels this packet carried
    }
    ```
 
-   One packet becomes exactly one row. `T` is when the laptop received it;
-   the device's own clock is kept as the `Time_tx` channel. Rows are sparse.
+   One packet becomes exactly one row. When the packet carries the device's
+   clock (`Time_tx`), `T` is that time mapped onto the session's clock;
+   otherwise `T` is when the laptop received it. The status says which
+   ("timing": `device` or `arrival`). Rows are sparse.
    On the way in, raw values are calibrated, computed channels are added
-   (`Time_rx`, `RX_INT`, `TX_INT`, full-precision `PosLat`/`PosLong`/`PosAlt`)
+   (`Time_rx`, `RX_INT`, `TX_INT`, `RX_DELAY`, full-precision
+   `PosLat`/`PosLong`/`PosAlt`)
    and fields with unknown ids are left out (the rest of the packet is kept).
 4. **Frame** (`live.Frame`) — every row received since the previous frame,
    sent 20 times a second (`frame_rate`). Each packet stays its own row, so
@@ -58,7 +61,8 @@ From wire to screen, data takes these shapes:
 
 ## What runs in the backend
 
-`services.LiveService` is the only thing the frontend talks to. It owns one
+`services.LiveService` handles device/configuration calls and saved setups.
+`services.LogService` handles downloads, conversion, and opening logs. LiveService owns one
 `live.Session` at a time, for the selected device profile; switching devices
 stops the session (freeing port 5002) before starting the next.
 
@@ -76,9 +80,10 @@ profile's device, decode it, ignore commands, learn names, build the row. It
 also emits a frame every 1/frame_rate s, a status every 0.5 s, and saves the
 name cache every 2 s if it changed.
 
-The backend keeps **no history**: only the latest value per channel (needed
+The live backend keeps **no telemetry history**: only the latest value per channel (needed
 to rebuild the GPS values), the name table and rows not yet sent. Its memory
-stays flat however long it runs.
+stays bounded by the live pipeline. Separately, opening a log retains a loaded
+table in `internal/logdata` until its one-time URL is fetched.
 
 ## How backend and frontend talk
 
@@ -131,13 +136,16 @@ over and never touched again, or copied.
     `Ignored` slices.
   - The listener reads into one reusable 64 KB buffer, so it copies each
     packet's bytes before passing them on.
-- **Only two mutexes**, where state really is shared:
+- **Synchronization boundaries**, where state is shared:
   - `Session.mu` — the frontend can call `Status()` and `Channels()` at any
     time from Wails' goroutines; the hub stores a copy under the lock and
     those calls read the copy.
   - `LiveService.mu` — makes `Connect`, `Disconnect` and `Reload` run one at
     a time, so two quick clicks can't start two sessions or fight over the
     port.
+  - `LogService.mu` tracks remote file-server ownership; `logdata.Store.mu`
+    protects pending one-time table transfers. The table is removed under the
+    lock before encoding, so only one request can claim it.
 - **The frontend needs none of this**: JavaScript is single-threaded, so each
   event is handled to completion before the next.
 
@@ -145,8 +153,47 @@ The race detector runs in the tests and CI (`just test-race`).
 
 ## Memory
 
-The live chart history is capped at `history_minutes × 60 × 60` rows (108,000
-at the default 30 minutes; about 50 MB with the ILTM's ~55 channels). When it
-fills, the oldest quarter is dropped. The cap is by rows, so a faster device
-gets less time in the same memory. In a 20× speed test (≈980 packets/s) the
-frontend heap levelled off around 45 MB and the backend around 140 MB.
+Live sessions usually contain five minutes or less of continuous data. At 50 Hz
+with 60 channels plus time, five minutes represents about 7.32 MB of Float64
+samples, before capacity overhead and derived channels. This is a workload
+assumption, not a new retention limit. The configured row cap remains
+`history_minutes × 60 × 60` (108,000 rows at the default 30 minutes); filling it
+drops the oldest quarter.
+
+The Live tab reads mutable store views directly. Watching live data in the Viewer
+publishes an immutable snapshot at most once a second while that tab is visible.
+A store revision prevents copies and analysis when no rows changed. Metadata-only
+snapshot updates reuse the existing sample buffers.
+
+CSV logs can be much larger. `logfile.Table.WriteColumns` sends a loaded table in
+64 KiB chunks instead of allocating a second complete encoded matrix in Go.
+The browser still fetches one full ArrayBuffer and creates zero-copy Float64
+column views. Parsing, sorting, normalization, and frontend analysis remain
+in-memory; streaming the transfer does not make arbitrarily large files cheap.
+See [backend.md](backend.md) for the log transfer implementation.
+
+## Timing: device clock vs arrival time
+
+Over WiFi, packets arrive late and in bursts (the ESP32 queues them while
+busy), so plotting rows at their arrival time distorts the time axis: a burst
+of five packets 20 ms apart lands at one instant. When packets carry
+`Time_tx` the hub places each row at the device's time instead:
+
+- `timebase` keeps an offset with `T = Time_tx + offset`. A packet can only be
+  delayed, never early, so `arrival − Time_tx` is the true offset plus that
+  packet's delay; the smallest value seen is the best estimate. The offset
+  follows new minimums immediately and may rise by at most 200 µs per second
+  so it can follow clock drift between the ESP32 and the laptop (each is
+  within ~50 ppm). A device clock jumping back more than 2 s or forward more
+  than 60 s is a restart and resets the offset.
+- Rows wait in the hub for 120 ms before they are sent, so packets that
+  arrive out of order are sorted first. They are stamped when they leave the
+  buffer, with the newest offset, which matters for bursts: the offset is
+  only accurate once the burst's last packet has arrived.
+- A row that would still go before one already sent is placed just after it
+  and counted in the status as "late". `RX_DELAY` is each row's network delay
+  above the minimum, useful for judging the WiFi link.
+
+Packets without `Time_tx` (e.g. a relay that drops it) fall back to arrival
+time with no buffering. Logs downloaded from the SD card always use the
+logger's timestamps.

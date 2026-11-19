@@ -52,6 +52,7 @@ layout stay as they are.
 |---|---|
 | `id`, `name` | unique id (used in `settings.yaml`) and display name |
 | `address` | device IP; optional, used if discovery and telemetry don't reveal it |
+| `accepted_addresses` | optional additional telemetry source IPs for a device with multiple known addresses; these do not replace discovery |
 | `telemetry.listen` | UDP address the app listens on (default `0.0.0.0:5002`) |
 | `telemetry.only_from_device` | only use data from this device (default true); see below |
 | `discovery.enabled`, `port`, `request`, `device_id` | discovery settings; `device_id` must match the device's reply |
@@ -62,8 +63,9 @@ layout stay as they are.
 | `fileserver` | the logger's HTTP file server: `port` (80), `logs_dir` (`/logs`), and the `enable`/`disable` command names. Leave it out for devices without one; the Logs tab then says there are no logs to download. |
 | `rename` | signal id → name, overriding what the device sends |
 | `combine` | `{ name, hi, lo }`: add two channels into one |
-| `calibrations` | channel name → `linear` (mult/div/add), `steinhart_f` (3 points, r_fixed, adc_max) or `gear` (gear-position sensor ADC → gear; see below) |
-| `channels` | channel name → `label`, `unit`, `precision`, `pinned`, `large`, `order`, `warn_min/max`, `crit_min/max` |
+| `calibrations` | channel name → `linear` (mult/div/add), `poly` (`coeffs` a₀…aₙ, value = a₀ + a₁·raw + …; optional `points` and `degree` it was fitted from), `table` (`points` [[raw, value], …], straight lines between them), `steinhart_f` (3 points, r_fixed, adc_max) or `gear` (gear-position sensor ADC → gear; see below) |
+| `channels` | channel name → `label`, `unit`, `precision`, `color` (`#rrggbb`), `group` (heading in the channel list), `pos` (`[x, y]` spot on the car map, 0–1 from the left and from the front), `pinned`, `large`, `order`, `warn_min/max`, `crit_min/max` |
+| `car` | car specs for the analysis tools: `mass`, `wheelbase`, `cg_height`, `rear_weight` (0–1), `tire_radius`, `tire_mu`, `primary`, `gears` (list), `final_drive`, `redline`, `launch_gear`, `slip_low`, `slip_high` (0–1), `target_g`, `cla` and `cda` (m², 0 = no aero), `aero_front` (front share of downforce, 0–1), `air_density` (kg/m³). Missing values use typical FSAE numbers, except `cla`, `cda` and `target_g`, where 0 means not set. |
 
 Unknown keys are reported as errors (catches typos). A broken profile is
 listed in the app instead of stopping the others from loading.
@@ -76,6 +78,9 @@ network, both would send to the laptop and their packets would mix. With the
 option on, only the device that answered with the profile's `device_id` (or
 sends from `address`) is used. Turn it off only when discovery can't work on
 the network and the address isn't known.
+On a computer with several network adapters, a matching device may answer
+discovery from more than one address. The app accepts telemetry from each
+matching address and uses the address that sends data for subsequent commands.
 
 ### Why `pad_to: 256` for the ILTM
 
@@ -114,6 +119,22 @@ For `devices/uno_q_sim.yaml` use `port: 8080`, and add the two commands to
     Disable_FileServer: { id: 6, data: 0 }
 ```
 
+### Fitted calibrations (`poly`, `table`)
+
+The channel editor's "Known points" mode saves the points you entered along
+with the fit, so they can be edited again later:
+
+```yaml
+calibrations:
+  OilPres: { type: poly, coeffs: [-10.5, 0.026, -1.2e-06], degree: 2, points: [[400, 0], [1200, 21], [2400, 48], [3600, 70]] }
+  FuelLevel: { type: table, points: [[400, 0], [1200, 21], [2400, 48], [3600, 70]] }
+```
+
+Written by hand, a `poly` with `points` and `degree` but no `coeffs` is fitted
+(least squares) when the profile loads. A `table` carries its first and last
+lines on beyond the end points rather than clamping, so an out-of-range
+reading still moves.
+
 ### The `gear` calibration
 
 Turns the gear-position sensor's 12-bit ADC reading (`GearRaw`, SIM input on
@@ -136,3 +157,35 @@ sits between 1 and 2, as on the shifter. Like other calibrations it applies to
 the live view, `_Normalized.csv` and logs opened in the Viewer, not to the raw
 long CSV. To change the ranges, edit `gearFromADC` and its test
 (`TestGearCalibration`).
+
+### Saved setups (`presets/`)
+
+"Setups" in the app saves the Viewer's sheets, plots, made channels and
+track/launch settings as `presets/<name>.json` in the config folder. Copy
+these files to share a setup with the team; delete one to remove it.
+
+### Editing a profile from the app
+
+The ✎ button on a channel (Live and Viewer channel lists) and the Car tab
+write to the selected device's profile. They change only the lines they own,
+so comments and hand formatting elsewhere survive:
+
+- the channel's line under `channels:` is replaced by one flow-style line
+  (`{ label: …, unit: …, color: …, group: … }`) keeping its other keys;
+- its line under `calibrations:` is replaced, added or removed;
+- the whole `car:` block is rewritten.
+
+A missing section is appended at the end of the file. The edited text is
+loaded with the same strict decoder before it is written, so an edit that
+would break the profile is refused and nothing is saved. New calibrations
+reach a running live session straight away (`Session.SetCalibrations`) without
+reconnecting; logs pick them up the next time they are opened (see the Viewer
+notes in [frontend.md](frontend.md) for wide CSVs).
+
+Channels with no `group` are grouped by name: Accel*/Yaw → Accelerometer,
+RPM/TPS/CLT/Oil/AFR/Gear/BatV → Engine, FBPS/RBPS → Brakes, PosLat/PosLong →
+GPS, damper/shock/travel → Suspension, VSS/Speed → Vehicle, StrAngle →
+Driver (`frontend/src/data/groups.ts`).
+
+Channels with no `pos` are put on the car map by name in the same way
+(`frontend/src/data/sensors.ts`); dragging a dot in the Car tab writes `pos`.

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { LiveService } from '../../bindings/dawg_viewer/services'
 import { toolbarButton } from '../ui'
-import { refresh, store, useInfo, useStatus } from './connection'
+import { refresh, store, useInfo, useStatus, useTestMode } from './connection'
 import { formatAge } from './format'
 
 const STATE_STYLE: Record<string, { label: string; className: string }> = {
@@ -27,6 +27,7 @@ const SOURCE_LABEL: Record<string, string> = {
 export function StatusHeader() {
   const info = useInfo()
   const st = useStatus()
+  const testing = useTestMode()
   const [error, setError] = useState('')
   const state =
     st.state === 'listening' && st.filtering
@@ -47,7 +48,12 @@ export function StatusHeader() {
   return (
     <div className="border-b border-zinc-800">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-3 py-1.5 text-xs">
-        <label className="flex items-center gap-2">
+        {testing && (
+          <span className="text-amber-300">
+            Test mode: a simulated car is driving. Nothing is read from or sent to the logger.
+          </span>
+        )}
+        <label className={`flex items-center gap-2 ${testing ? 'hidden' : ''}`}>
           <span className="text-zinc-500">Device</span>
           <select
             className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-100 outline-none focus:border-red-500"
@@ -71,6 +77,25 @@ export function StatusHeader() {
           {st.packetRate.toFixed(0)} pkt/s · last {formatAge(st.lastPacketMs)}
         </span>
 
+        {st.timing && (
+          <span
+            className="text-zinc-400"
+            title={
+              st.timing === 'device'
+                ? "Samples are placed by the logger's own clock (Time_tx), lined up with this computer's clock, so WiFi delays and bursts don't distort the time axis. Shown about 0.1 s behind real time to put late packets in order."
+                : 'The packets carry no logger timestamp, so samples are placed at the time they arrive. Network delays show up on the time axis.'
+            }
+          >
+            Timing:{' '}
+            <span className={st.timing === 'device' ? 'text-emerald-300' : 'text-amber-300'}>
+              {st.timing === 'device' ? 'logger clock' : 'arrival time'}
+            </span>
+            {st.lateRows > 0 && (
+              <span className="text-zinc-600"> · {st.lateRows.toLocaleString()} late</span>
+            )}
+          </span>
+        )}
+
         {st.deviceIp && (
           <span className="text-zinc-400" title={`Firmware ${st.firmware || 'unknown'}`}>
             Device {st.deviceIp}{' '}
@@ -82,7 +107,7 @@ export function StatusHeader() {
         {st.listen && <span className="text-zinc-600">listening on {st.listen}</span>}
 
         <span className="ml-auto flex gap-2">
-          {connected ? (
+          {testing ? null : connected ? (
             <button
               type="button"
               className={toolbarButton}

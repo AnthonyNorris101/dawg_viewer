@@ -5,6 +5,12 @@
 // @ts-ignore: Unused imports
 import * as config$0 from "../internal/config/models.js";
 
+export interface ChannelSettings {
+    "name": string;
+    "meta": config$0.ChannelMeta;
+    "calibration": config$0.Calibration | null;
+}
+
 export interface Info {
     "version": string;
     "configDir": config$0.Dir;
@@ -13,6 +19,8 @@ export interface Info {
     "profileErrors": config$0.ProfileError[] | null;
     "active": string;
     "channels": { [_ in string]?: config$0.ChannelMeta } | null;
+    "calibrations": { [_ in string]?: config$0.Calibration } | null;
+    "car": config$0.Car;
     "settingsError": string;
 }
 
@@ -32,6 +40,11 @@ export interface LogProgress {
     "done": number;
     "total": number;
     "message": string;
+}
+
+export interface Preset {
+    "name": string;
+    "modified": number;
 }
 
 export interface ProfileSummary {
@@ -54,6 +67,7 @@ export interface ViewerChannel {
 
 export interface ViewerLog {
     "name": string;
+    "source": string;
     "path": string;
     "rows": number;
     "note": string;

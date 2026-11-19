@@ -9,9 +9,11 @@ export {
 };
 
 export type {
+    ChannelSettings,
     Info,
     LocalLog,
     LogProgress,
+    Preset,
     ProfileSummary,
     RemoteLog,
     ViewerChannel,

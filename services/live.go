@@ -45,7 +45,15 @@ type Info struct {
 	ProfileErrors []config.ProfileError         `json:"profileErrors"`
 	Active        string                        `json:"active"`
 	Channels      map[string]config.ChannelMeta `json:"channels"`
+	Calibrations  map[string]config.Calibration `json:"calibrations"`
+	Car           config.Car                    `json:"car"`
 	SettingsError string                        `json:"settingsError"`
+}
+
+type ChannelSettings struct {
+	Name        string              `json:"name"`
+	Meta        config.ChannelMeta  `json:"meta"`
+	Calibration *config.Calibration `json:"calibration"`
 }
 
 type LiveService struct {
@@ -110,6 +118,7 @@ func (s *LiveService) infoLocked() Info {
 		Settings:      s.settings,
 		ProfileErrors: s.badProfiles,
 		Channels:      map[string]config.ChannelMeta{},
+		Calibrations:  map[string]config.Calibration{},
 	}
 	if s.settingsErr != nil {
 		info.SettingsError = s.settingsErr.Error()
@@ -119,9 +128,53 @@ func (s *LiveService) infoLocked() Info {
 	}
 	if s.active != nil {
 		info.Active = s.active.ID
-		info.Channels = s.active.Channels
+		if s.active.Channels != nil {
+			info.Channels = s.active.Channels
+		}
+		if s.active.Calibrations != nil {
+			info.Calibrations = s.active.Calibrations
+		}
+		info.Car = s.active.Car
 	}
 	return info
+}
+
+func (s *LiveService) SaveChannel(c ChannelSettings) (Info, error) {
+	return s.editProfile(func(file string) error {
+		return config.SaveChannel(file, c.Name, c.Meta, c.Calibration)
+	})
+}
+
+func (s *LiveService) SaveCar(car config.Car) (Info, error) {
+	return s.editProfile(func(file string) error { return config.SaveCar(file, car) })
+}
+
+func (s *LiveService) editProfile(edit func(file string) error) (Info, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active == nil {
+		return s.infoLocked(), errors.New("no device selected; pick one in the Live tab")
+	}
+	id := s.active.ID
+	if err := edit(s.active.File); err != nil {
+		return s.infoLocked(), err
+	}
+	if err := s.loadLocked(); err != nil {
+		return s.infoLocked(), err
+	}
+	s.active = nil
+	for i := range s.profiles {
+		if s.profiles[i].ID == id {
+			s.active = &s.profiles[i]
+		}
+	}
+	if s.active == nil {
+		return s.infoLocked(), fmt.Errorf("device profile %q no longer loads", id)
+	}
+	if s.session != nil {
+		s.session.SetCalibrations(s.active.Calibrations)
+	}
+	return s.infoLocked(), nil
 }
 
 func (s *LiveService) Connect(profileID string) error {

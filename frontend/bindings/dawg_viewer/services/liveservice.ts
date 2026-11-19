@@ -7,6 +7,9 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as config$0 from "../internal/config/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as live$0 from "../internal/live/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -21,6 +24,10 @@ export function Connect(profileID: string): $CancellablePromise<void> {
     return $Call.ByID(1608952431, profileID);
 }
 
+export function DeletePreset(name: string): $CancellablePromise<void> {
+    return $Call.ByID(1585120215, name);
+}
+
 export function Disconnect(): $CancellablePromise<void> {
     return $Call.ByID(2835453409);
 }
@@ -29,12 +36,32 @@ export function Info(): $CancellablePromise<$models.Info> {
     return $Call.ByID(606610847);
 }
 
+export function LoadPreset(name: string): $CancellablePromise<string> {
+    return $Call.ByID(2258341564, name);
+}
+
 export function OpenConfigFolder(): $CancellablePromise<void> {
     return $Call.ByID(2093634333);
 }
 
+export function Presets(): $CancellablePromise<$models.Preset[] | null> {
+    return $Call.ByID(716124029);
+}
+
 export function Reload(): $CancellablePromise<$models.Info> {
     return $Call.ByID(3955670050);
+}
+
+export function SaveCar(car: config$0.Car): $CancellablePromise<$models.Info> {
+    return $Call.ByID(3851497768, car);
+}
+
+export function SaveChannel(c: $models.ChannelSettings): $CancellablePromise<$models.Info> {
+    return $Call.ByID(2424820913, c);
+}
+
+export function SavePreset(name: string, data: string): $CancellablePromise<$models.Preset> {
+    return $Call.ByID(3629192645, name, data);
 }
 
 export function Status(): $CancellablePromise<live$0.Status> {

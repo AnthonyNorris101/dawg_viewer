@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"net"
+	"net/netip"
 	"sync"
 	"testing"
 	"time"
@@ -226,5 +227,19 @@ func TestOnlyTheProfilesDeviceIsAccepted(t *testing.T) {
 				t.Fatalf("ignored sender not reported: %+v", st)
 			}
 		})
+	}
+}
+
+func TestDiscoveredAddressesAcceptTelemetryFromEitherInterface(t *testing.T) {
+	h := newHub(Options{Profile: config.Profile{Discovery: config.Discovery{Enabled: true}}}, &Session{})
+	first := netip.MustParseAddr("172.21.68.195")
+	second := netip.MustParseAddr("172.24.128.1")
+	h.discovered[first] = true
+	h.discovered[second] = true
+	if !h.accepts(first) || !h.accepts(second) {
+		t.Fatal("both matching discovery addresses should be accepted")
+	}
+	if h.accepts(netip.MustParseAddr("172.20.16.1")) {
+		t.Fatal("an address without matching discovery should be rejected")
 	}
 }

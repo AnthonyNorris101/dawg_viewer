@@ -54,6 +54,15 @@ describe('LogsView', () => {
     expect(onOpen).toHaveBeenCalledWith(local.path)
   })
 
+  it('disables local open controls while another log is opening', async () => {
+    render(<LogsView opening onOpen={vi.fn()} />)
+
+    expect(await screen.findByText('run.bin')).toBeInTheDocument()
+    expect(screen.getByText('Opening log…')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open file…' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /^Open$/ })).toBeDisabled()
+  })
+
   it('connects, selects, and downloads a remote log', async () => {
     const user = userEvent.setup()
     render(<LogsView onOpen={vi.fn()} />)

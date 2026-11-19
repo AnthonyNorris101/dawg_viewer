@@ -33,7 +33,9 @@ sequence of ITV fields:
   times a second. A signal missing from a packet keeps its previous value in
   the app.
 - **Id 0** is the sender's clock in milliseconds (`Time_tx`). Include it in
-  each data packet; the app derives `TX_INT` from it.
+  each data packet: the app places live samples by this clock (so WiFi delays
+  don't distort the time axis) and derives `TX_INT` from it. Without it,
+  samples are placed at arrival time.
 - **Ids 1–9 are reserved.** A packet containing id 1 is treated as a
   command, not data.
 - **Name packets** map ids to channel names with type `0x00` fields, e.g.

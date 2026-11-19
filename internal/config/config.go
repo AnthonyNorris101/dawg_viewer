@@ -231,17 +231,19 @@ func SaveDevice(dir, id string) error {
 }
 
 type Profile struct {
-	ID           string                 `yaml:"id" json:"id"`
-	Name         string                 `yaml:"name" json:"name"`
-	Address      string                 `yaml:"address" json:"address"`
-	Telemetry    Telemetry              `yaml:"telemetry" json:"telemetry"`
-	Discovery    Discovery              `yaml:"discovery" json:"discovery"`
-	Commands     Commands               `yaml:"commands" json:"commands"`
-	FileServer   *FileServer            `yaml:"fileserver" json:"fileServer"`
-	Rename       map[int]string         `yaml:"rename" json:"-"`
-	Combine      []Combine              `yaml:"combine" json:"-"`
-	Calibrations map[string]Calibration `yaml:"calibrations" json:"-"`
-	Channels     map[string]ChannelMeta `yaml:"channels" json:"channels"`
+	ID                string                 `yaml:"id" json:"id"`
+	Name              string                 `yaml:"name" json:"name"`
+	Address           string                 `yaml:"address" json:"address"`
+	AcceptedAddresses []string               `yaml:"accepted_addresses" json:"acceptedAddresses"`
+	Telemetry         Telemetry              `yaml:"telemetry" json:"telemetry"`
+	Discovery         Discovery              `yaml:"discovery" json:"discovery"`
+	Commands          Commands               `yaml:"commands" json:"commands"`
+	FileServer        *FileServer            `yaml:"fileserver" json:"fileServer"`
+	Rename            map[int]string         `yaml:"rename" json:"-"`
+	Combine           []Combine              `yaml:"combine" json:"-"`
+	Calibrations      map[string]Calibration `yaml:"calibrations" json:"-"`
+	Channels          map[string]ChannelMeta `yaml:"channels" json:"channels"`
+	Car               Car                    `yaml:"car" json:"-"`
 
 	File string `yaml:"-" json:"file"`
 }
@@ -285,15 +287,38 @@ type Combine struct {
 	Lo   string `yaml:"lo"`
 }
 
+type Car struct {
+	Mass       float64   `yaml:"mass" json:"mass"`
+	Wheelbase  float64   `yaml:"wheelbase" json:"wheelbase"`
+	CGHeight   float64   `yaml:"cg_height" json:"cgHeight"`
+	RearWeight float64   `yaml:"rear_weight" json:"rearWeight"`
+	TireRadius float64   `yaml:"tire_radius" json:"tireRadius"`
+	TireMu     float64   `yaml:"tire_mu" json:"tireMu"`
+	Primary    float64   `yaml:"primary" json:"primary"`
+	Gears      []float64 `yaml:"gears" json:"gears"`
+	FinalDrive float64   `yaml:"final_drive" json:"finalDrive"`
+	Redline    float64   `yaml:"redline" json:"redline"`
+	LaunchGear float64   `yaml:"launch_gear" json:"launchGear"`
+	SlipLow    float64   `yaml:"slip_low" json:"slipLow"`
+	SlipHigh   float64   `yaml:"slip_high" json:"slipHigh"`
+	TargetG    float64   `yaml:"target_g" json:"targetG"`
+	ClA        float64   `yaml:"cla" json:"clA"`
+	CdA        float64   `yaml:"cda" json:"cdA"`
+	AeroFront  float64   `yaml:"aero_front" json:"aeroFront"`
+	AirDensity float64   `yaml:"air_density" json:"airDensity"`
+}
+
 type Calibration struct {
-	Type               string       `yaml:"type"`
-	Mult               float64      `yaml:"mult"`
-	Div                float64      `yaml:"div"`
-	Add                float64      `yaml:"add"`
-	Points             [][2]float64 `yaml:"points"`
-	RFixed             float64      `yaml:"r_fixed"`
-	ADCMax             float64      `yaml:"adc_max"`
-	ThermistorToGround *bool        `yaml:"thermistor_to_ground"`
+	Type               string       `yaml:"type" json:"type"`
+	Mult               float64      `yaml:"mult" json:"mult"`
+	Div                float64      `yaml:"div" json:"div"`
+	Add                float64      `yaml:"add" json:"add"`
+	Points             [][2]float64 `yaml:"points" json:"points,omitempty"`
+	Coeffs             []float64    `yaml:"coeffs" json:"coeffs,omitempty"`
+	Degree             int          `yaml:"degree" json:"degree,omitempty"`
+	RFixed             float64      `yaml:"r_fixed" json:"rFixed,omitempty"`
+	ADCMax             float64      `yaml:"adc_max" json:"adcMax,omitempty"`
+	ThermistorToGround *bool        `yaml:"thermistor_to_ground" json:"thermistorToGround,omitempty"`
 }
 
 func (c Calibration) Converter() (calib.Converter, error) {
@@ -328,8 +353,20 @@ func (c Calibration) Converter() (calib.Converter, error) {
 
 	case "gear":
 		return gearFromADC, nil
+	case "poly":
+		coeffs := c.Coeffs
+		if len(coeffs) == 0 && len(c.Points) > 0 {
+			fit, err := calib.FitPoly(c.Points, max(c.Degree, 1))
+			if err != nil {
+				return nil, err
+			}
+			coeffs = fit
+		}
+		return calib.Poly(coeffs)
+	case "table":
+		return calib.Table(c.Points)
 	default:
-		return nil, fmt.Errorf("unknown type %q (use linear, steinhart_f or gear)", c.Type)
+		return nil, fmt.Errorf("unknown type %q (use linear, poly, table, steinhart_f or gear)", c.Type)
 	}
 }
 
@@ -379,16 +416,19 @@ func (p *Profile) RenameByID() map[uint8]string {
 }
 
 type ChannelMeta struct {
-	Label     string   `yaml:"label" json:"label,omitempty"`
-	Unit      string   `yaml:"unit" json:"unit,omitempty"`
-	Precision *int     `yaml:"precision" json:"precision,omitempty"`
-	Pinned    bool     `yaml:"pinned" json:"pinned,omitempty"`
-	Large     bool     `yaml:"large" json:"large,omitempty"`
-	Order     int      `yaml:"order" json:"order"`
-	WarnMin   *float64 `yaml:"warn_min" json:"warnMin,omitempty"`
-	WarnMax   *float64 `yaml:"warn_max" json:"warnMax,omitempty"`
-	CritMin   *float64 `yaml:"crit_min" json:"critMin,omitempty"`
-	CritMax   *float64 `yaml:"crit_max" json:"critMax,omitempty"`
+	Label     string    `yaml:"label" json:"label,omitempty"`
+	Unit      string    `yaml:"unit" json:"unit,omitempty"`
+	Precision *int      `yaml:"precision" json:"precision,omitempty"`
+	Pinned    bool      `yaml:"pinned" json:"pinned,omitempty"`
+	Large     bool      `yaml:"large" json:"large,omitempty"`
+	Order     int       `yaml:"order" json:"order"`
+	WarnMin   *float64  `yaml:"warn_min" json:"warnMin,omitempty"`
+	WarnMax   *float64  `yaml:"warn_max" json:"warnMax,omitempty"`
+	CritMin   *float64  `yaml:"crit_min" json:"critMin,omitempty"`
+	CritMax   *float64  `yaml:"crit_max" json:"critMax,omitempty"`
+	Color     string    `yaml:"color" json:"color,omitempty"`
+	Group     string    `yaml:"group" json:"group,omitempty"`
+	Pos       []float64 `yaml:"pos" json:"pos,omitempty"`
 }
 
 func (p *Profile) applyDefaults() {

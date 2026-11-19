@@ -10,6 +10,7 @@ vi.mock('../../bindings/dawg_viewer/services', () => ({
 
 const log: ViewerLog = {
   name: 'session.csv',
+  source: 'wide',
   path: 'session.csv',
   note: '',
   rows: 3,
