@@ -170,8 +170,7 @@ CSV logs can be much larger. `logfile.Table.WriteColumns` sends a loaded table i
 The browser still fetches one full ArrayBuffer and creates zero-copy Float64
 column views. Parsing, sorting, normalization, and frontend analysis remain
 in-memory; streaming the transfer does not make arbitrarily large files cheap.
-See [modularity.md](modularity.md) for the module boundaries and measured encoder
-allocation comparison.
+See [backend.md](backend.md) for the log transfer implementation.
 
 ## Timing: device clock vs arrival time
 

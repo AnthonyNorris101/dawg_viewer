@@ -19,6 +19,7 @@ Items have independent width/height choices and can be dragged into explicit
 row/column slots, including empty cells; compatible saved slots are retained.
 Returning to Default stacks plots in visible grid order, reading left to right,
 then top to bottom. Viewer worksheets are independent of this choice.
+The selection persists between launches; item order and sizing are session-local.
 
 ## Guiding rule: high-rate updates bypass React
 

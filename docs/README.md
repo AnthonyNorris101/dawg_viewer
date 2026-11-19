@@ -1,14 +1,21 @@
-# Dawg Viewer documentation
+# Documentation
 
-The code is kept free of comments; the reasoning behind it lives here.
+## Using Dawg Viewer
 
-| Document | Covers |
+| Guide | Covers |
 |---|---|
-| [architecture.md](architecture.md) | How the whole system fits together: data model, what runs where, how backend and frontend talk, concurrency |
-| [backend.md](backend.md) | The Go packages one by one and the decisions inside them |
-| [frontend.md](frontend.md) | The React app: live store, plots, follow mode, why most updates bypass React |
-| [configuration.md](configuration.md) | The config folder, settings and device profiles |
-| [device-protocol.md](device-protocol.md) | What a device (ILTM, UNO Q) must send for the app to read it |
-| [development.md](development.md) | just commands, the simulator, tests, CI and releases |
-| [modularity.md](modularity.md) | Module ownership, live/CSV workload assumptions, and encoder benchmark evidence |
-| [dev_2.md](dev_2.md) | Current branch behavior, including Settings and Live bento layout |
+| [User guide](user-guide.md) | Live telemetry, logs, Viewer analysis, worksheets, and setups |
+| [Configuration](configuration.md) | Settings, device profiles, calibration, and saved setups |
+| [Device protocol](device-protocol.md) | Telemetry, discovery, commands, and logger file downloads |
+
+## Project and development
+
+| Guide | Covers |
+|---|---|
+| [Architecture](architecture.md) | System boundaries, data flow, concurrency, and memory ownership |
+| [Backend](backend.md) | Go packages, services, and log processing |
+| [Frontend](frontend.md) | React application structure, live rendering, and Viewer analysis |
+| [Development](development.md) | Toolchain, simulator, tests, CI, builds, and releases |
+| [AI documentation guidelines](ai-documentation-guidelines.md) | How AI contributors keep project documentation current |
+
+For setup and contribution expectations, start with the repository's [contribution guide](../CONTRIBUTING.md).

@@ -39,6 +39,8 @@ Before performing any write action on GitHub or Linear, show me the exact propos
 
 - Update documentation when user-visible behavior, architecture, setup, or
   operational expectations change.
+- Follow [docs/ai-documentation-guidelines.md](docs/ai-documentation-guidelines.md)
+  when writing or revising project documentation.
 - Keep docs accurate to the checked-out branch; avoid documenting plans as
   implemented features.
 - In the final response, state the outcome, affected areas, and verification
