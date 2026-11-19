@@ -38,6 +38,7 @@ The package-level backend guide is [backend.md](backend.md); the frontend guide 
 - [Frontend](frontend.md): update model, plot lifecycle, Viewer analysis, and module ownership.
 - [Backend](backend.md): Go services and package responsibilities.
 - [Development](development.md): toolchain, simulator, tests, CI, packaging, and versioning.
+- [Dawg Viewer 0.3.0 changelog](changelog/0.3.0.md): release highlights, reliability improvements, and upgrade notes.
 
 ## Technical constraints
 
