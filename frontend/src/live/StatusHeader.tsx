@@ -44,6 +44,8 @@ export function StatusHeader() {
 
   const connected = st.state !== 'stopped' && st.state !== 'error'
   const message = error || st.error
+  const backupOn = info?.settings.liveBackup !== false
+  const backupFile = st.recording ? st.recording.split(/[\\/]/).pop() : ''
 
   return (
     <div className="border-b border-zinc-800">
@@ -105,6 +107,29 @@ export function StatusHeader() {
           </span>
         )}
         {st.listen && <span className="text-zinc-600">listening on {st.listen}</span>}
+
+        {!testing && (
+          <label
+            className="flex items-center gap-1.5 text-zinc-400"
+            title={
+              st.recording
+                ? `Saving everything received to ${st.recording}`
+                : 'Save everything received to a CSV in the logs folder, as a backup of this session. Open it from the Logs tab.'
+            }
+          >
+            <input
+              type="checkbox"
+              className="accent-red-500"
+              checked={backupOn}
+              onChange={(e) => {
+                const on = e.target.checked
+                run(() => LiveService.SetLiveBackup(on))
+              }}
+            />
+            Backup log
+            {backupFile && <span className="text-emerald-300">● {backupFile}</span>}
+          </label>
+        )}
 
         <span className="ml-auto flex gap-2">
           {testing ? null : connected ? (

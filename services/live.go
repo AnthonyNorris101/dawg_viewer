@@ -268,6 +268,7 @@ func (s *LiveService) connectLocked(id string) error {
 		ConfigDir:  s.dir.Path,
 		FrameRate:  s.settings.FrameRate,
 		StaleAfter: time.Duration(s.settings.StaleAfterS * float64(time.Second)),
+		RecordDir:  s.recordDir(),
 	}, emitter{})
 	if err != nil {
 		emitter{}.Status(live.Status{Profile: p.ID, ProfileName: p.Name, State: "error", Error: err.Error(), LastPacketMs: -1})
@@ -275,6 +276,28 @@ func (s *LiveService) connectLocked(id string) error {
 	}
 	s.session = sess
 	return nil
+}
+
+// SetLiveBackup turns the live backup log on or off, saves the choice to
+// settings.yaml and applies it to the running session without reconnecting.
+func (s *LiveService) SetLiveBackup(on bool) (Info, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.settings.LiveBackup = &on
+	if s.session != nil {
+		s.session.SetRecordDir(s.recordDir())
+	}
+	if err := config.SaveLiveBackup(s.dir.Path, on); err != nil {
+		return s.infoLocked(), fmt.Errorf("changed for this run, but couldn't save the choice to settings.yaml: %w", err)
+	}
+	return s.infoLocked(), nil
+}
+
+func (s *LiveService) recordDir() string {
+	if !s.settings.BackupLive() {
+		return ""
+	}
+	return config.ResolvePath(s.dir.Path, s.settings.LogsDir)
 }
 
 func (s *LiveService) stopLocked() {

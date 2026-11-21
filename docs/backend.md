@@ -156,6 +156,22 @@ frame rate. The data model and goroutine layout are in
   device. Fixing that needs devices to check an id in the request.
 - **Status states:** `listening` (no data yet), `receiving`, `stale` (no
   packet for `stale_after_s`), `error`, `stopped`.
+- **Backup log** (`Options.RecordDir`, set from `live_backup` and
+  `logs_dir`): every row the hub sends is also written to
+  `<recording start UTC>_live_<profile id>.csv` (`-2`, `-3`, … if the name is
+  taken) in the same long CSV format as a converted `.bin`, so the Logs tab
+  and Viewer open it like a downloaded log. Values are the uncalibrated
+  device values, so the profile's current calibrations and `combine` entries
+  are applied when it is loaded; computed channels (`Time_rx`, `RX_INT`,
+  `TX_INT`, `RX_DELAY`) aren't stored. Timestamps are the row times the Live
+  tab plotted, in ms from the first recorded row, so a device restart doesn't
+  break the time axis. The file is created at the first data row, flushed
+  every 0.5 s (a crash loses at most that much) and closed by `Stop`. If it
+  can't be written, the status shows the error and the backup stops for that
+  session; live data is unaffected. `Session.SetRecordDir` turns it on or
+  off while connected (`LiveService.SetLiveBackup`, which also saves
+  `live_backup`); turning it on starts a new file, and `Status.Recording` is
+  the file being written.
 - `Start` returns an error immediately if the port is busy. `Stop` waits
   until the port is free again.
 
@@ -181,7 +197,8 @@ and any CSV log, and turns them into CSVs and tables for the viewer.
 
 ### The two CSVs made from a `.bin` (`Convert`)
 
-- `<name>.csv` — the long CSV the Python app made:
+- `<name>.csv` — the long CSV the Python app made (`Recorder` writes live
+  backup logs in this format too):
   `timestamp_ms,id,signal,value`, one row per logged value, names after the
   profile's `rename`, `UNKNOWN_<id>` for ids missing from the header. Values
   are **as logged** (no calibration) and written with the shortest decimal

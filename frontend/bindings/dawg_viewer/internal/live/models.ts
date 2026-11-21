@@ -43,5 +43,10 @@ export interface Status {
     "error": string;
     "timing": string;
     "lateRows": number;
+
+    /**
+     * backup log being written, empty when off
+     */
+    "recording": string;
     "startedAt": number;
 }

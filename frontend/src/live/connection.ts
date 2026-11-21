@@ -47,6 +47,7 @@ const EMPTY_STATUS: Status = {
   startedAt: 0,
   timing: '',
   lateRows: 0,
+  recording: '',
 }
 
 export const emptyStatus = (): Status => ({ ...EMPTY_STATUS, unknownIds: [], ignored: [] })

@@ -68,4 +68,5 @@ export interface Settings {
     "staleAfterS": number;
     "logsDir": string;
     "csvRateHz": number;
+    "liveBackup": boolean | null;
 }

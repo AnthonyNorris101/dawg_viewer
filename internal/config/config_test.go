@@ -26,6 +26,13 @@ func TestSeedAndLoadDefaults(t *testing.T) {
 	if s.Device != "g26-iltm" || s.FrameRate != 20 {
 		t.Fatalf("settings: %+v", s)
 	}
+	if !s.BackupLive() {
+		t.Fatal("live backup should be on by default")
+	}
+	off := false
+	if (Settings{}).BackupLive() != true || (Settings{LiveBackup: &off}).BackupLive() {
+		t.Fatal("live_backup: unset should mean on, false should mean off")
+	}
 
 	profiles, bad := LoadProfiles(dir)
 	if len(bad) != 0 {
@@ -206,5 +213,35 @@ func TestNewBuiltInProfilesReachExistingFolders(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dev, "base_station.yaml")); err == nil {
 		t.Fatal("a profile the user deleted came back")
+	}
+}
+
+func TestSaveLiveBackupKeepsComments(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Locate(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveLiveBackup(dir, false); err != nil {
+		t.Fatal(err)
+	}
+	s, err := LoadSettings(dir)
+	if err != nil || s.BackupLive() {
+		t.Fatalf("live_backup not saved: %+v %v", s, err)
+	}
+	b, _ := os.ReadFile(filepath.Join(dir, "settings.yaml"))
+	want, _ := defaults.ReadFile("defaults/settings.yaml")
+	if got := strings.Replace(string(b), "live_backup: false", "live_backup: true", 1); got != string(want) {
+		t.Fatalf("something besides the live_backup line changed:\n%s", b)
+	}
+
+	old := filepath.Join(dir, "settings.yaml")
+	if err := os.WriteFile(old, []byte("device: g26-iltm\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveLiveBackup(dir, true); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(old); string(b) != "device: g26-iltm\nlive_backup: true\n" {
+		t.Fatalf("missing key should be added at the end:\n%s", b)
 	}
 }

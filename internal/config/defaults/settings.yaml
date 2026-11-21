@@ -20,3 +20,9 @@ logs_dir: logs
 # Samples per second of the evenly spaced CSV made from each downloaded log,
 # and of .bin logs opened in the Viewer.
 csv_rate_hz: 100
+
+# While connected, also save everything received live to a CSV in logs_dir
+# (<date>_<time>_live_<device>.csv, UTC), as a backup of the session. Open it
+# from the Logs tab like a downloaded log. Set to false to turn it off, or use
+# the Backup log checkbox in the Live tab.
+live_backup: true

@@ -19,6 +19,7 @@ const sampleInfo: Info = {
     staleAfterS: 2,
     logsDir: 'C:/logs',
     csvRateHz: 100,
+    liveBackup: true,
   },
   profiles: [],
   profileErrors: [],

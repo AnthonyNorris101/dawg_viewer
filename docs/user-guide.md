@@ -6,6 +6,8 @@ Join the same network as the logger, start Dawg Viewer, then choose the device a
 
 Scroll on a plot to zoom, use Shift+scroll to pan, or drag across a range to zoom in. Choose **Resume live** to follow incoming data again. The optional track map shows position and lap timing.
 
+While connected, the app also saves everything it receives to a backup log in the logs folder, named `<date>_<time>_live_<device>.csv` (UTC). If the SD-card log is lost or can't be downloaded, open the backup from the Logs tab or the Viewer like any other log. Use the **Backup log** checkbox at the top of the Live tab to turn it on or off; the change applies right away and is remembered. While a file is being written, its name is shown next to the checkbox. Turning the backup back on starts a new file.
+
 Only one application can listen on the telemetry port at a time. Close the previous logger viewer if Dawg Viewer receives no data.
 
 ## Open and analyze a log
