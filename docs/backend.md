@@ -4,12 +4,13 @@ The Go code is split into packages that each depend only on the ones below:
 
 ```
 main.go          starts Wails, reads --config
-services/        what the frontend can call; thin
+services/        Wails calls and application orchestration
 internal/live    a session: packets → rows, status, frames
 internal/link    network I/O only
 internal/itv     the wire encoding
 internal/config  config folder, settings, device profiles, name cache
-internal/logfile SD-card .bin logs → CSV, 100 Hz tables, CSV loading
+internal/logfile SD-card .bin logs → CSV, resampled tables, CSV loading, column encoding
+internal/logdata one-time table ownership and streaming HTTP delivery
 internal/fileserver HTTP client for the logger's file server
 internal/calib   calibration maths
 cmd/iltm-sim     a fake logger for testing
@@ -51,12 +52,16 @@ names: `live:frame`, `live:status`, `live:channels`; they're registered with
 - `Load` reads a file with `logfile.Load`, using the selected profile's
   renames, calibrations and `combine` list and `csv_rate_hz`. It returns only
   metadata (name, rows, channel names and units, a note on how it was
-  processed) plus a one-time `dataUrl`. The columns themselves are packed into
-  one little-endian float64 block — time, then each channel — and served from
-  that URL by `LogDataMiddleware` on the app's asset server. The block is
-  deleted once fetched (at most two are kept). This avoids base64 inside JSON,
-  which made a 724,000-row CSV a 131 MB string; float64 keeps GPS values
-  exact.
+  processed) plus a one-time `dataUrl`. `internal/logdata.Store` retains the table
+  and streams little-endian float64 columns (relative time in seconds, then each
+  channel) when that URL is fetched. A 64 KiB scratch buffer replaces the former
+  full-size encoded copy. The URL is consumed before streaming, so concurrent
+  fetches cannot both claim it. At most two pending tables are kept; registering
+  a third clears the older pending transfers. Shutdown clears pending tables.
+  `LogDataMiddleware` only adapts this handler to Wails. Encoding and transfer
+  ownership can be tested without starting the app. Failed writes stop encoding;
+  the declared length and frontend size check reject incomplete data. Canceled requests stop at the next chunk. This protocol
+  avoids base64 JSON and preserves float64 GPS precision.
 - `LocalLogs`, `ConvertLocal`, `PickFile` (native file dialog),
   `LogsFolder`, `OpenLogsFolder`.
 
@@ -151,6 +156,22 @@ frame rate. The data model and goroutine layout are in
   device. Fixing that needs devices to check an id in the request.
 - **Status states:** `listening` (no data yet), `receiving`, `stale` (no
   packet for `stale_after_s`), `error`, `stopped`.
+- **Backup log** (`Options.RecordDir`, set from `live_backup` and
+  `logs_dir`): every row the hub sends is also written to
+  `<recording start UTC>_live_<profile id>.csv` (`-2`, `-3`, … if the name is
+  taken) in the same long CSV format as a converted `.bin`, so the Logs tab
+  and Viewer open it like a downloaded log. Values are the uncalibrated
+  device values, so the profile's current calibrations and `combine` entries
+  are applied when it is loaded; computed channels (`Time_rx`, `RX_INT`,
+  `TX_INT`, `RX_DELAY`) aren't stored. Timestamps are the row times the Live
+  tab plotted, in ms from the first recorded row, so a device restart doesn't
+  break the time axis. The file is created at the first data row, flushed
+  every 0.5 s (a crash loses at most that much) and closed by `Stop`. If it
+  can't be written, the status shows the error and the backup stops for that
+  session; live data is unaffected. `Session.SetRecordDir` turns it on or
+  off while connected (`LiveService.SetLiveBackup`, which also saves
+  `live_backup`); turning it on starts a new file, and `Status.Recording` is
+  the file being written.
 - `Start` returns an error immediately if the port is busy. `Stop` waits
   until the port is free again.
 
@@ -176,7 +197,8 @@ and any CSV log, and turns them into CSVs and tables for the viewer.
 
 ### The two CSVs made from a `.bin` (`Convert`)
 
-- `<name>.csv` — the long CSV the Python app made:
+- `<name>.csv` — the long CSV the Python app made (`Recorder` writes live
+  backup logs in this format too):
   `timestamp_ms,id,signal,value`, one row per logged value, names after the
   profile's `rename`, `UNKNOWN_<id>` for ids missing from the header. Values
   are **as logged** (no calibration) and written with the shortest decimal
@@ -299,3 +321,31 @@ Pretends to be the ILTM so the app can be tested without the car:
 Signal ids and names follow the ILTM's vehicle config. Ids 111 and 113 copy
 the firmware's naming mistake (`PosLat_L`) so the app's rename fix gets
 exercised. `RadTemp` is sent as raw ADC counts so the calibration is used.
+
+## Editing profiles (internal/config/edit.go)
+
+`SaveChannel` and `SaveCar` edit a profile as text rather than decoding and
+re-encoding it, because re-encoding would drop the comments and the aligned
+hand formatting the shipped profiles rely on. They find the top-level
+section, then the entry by key (decoded with YAML so quoted keys match),
+replace or insert one line, and decode the result with `KnownFields` before
+writing it atomically (temp file + rename). `LiveService.SaveChannel` and
+`SaveCar` then reload the profiles and pass the new calibrations to the
+running session, which swaps its converters inside the hub goroutine.
+
+`ViewerLog.Source` says whether a log was a `.bin`, a long CSV (both get the
+profile's calibrations when loaded) or a wide CSV (loaded as it is). The
+Viewer uses it to decide how to apply a calibration saved while a log is open.
+
+## Column delivery (internal/logdata and internal/logfile/columns.go)
+
+`LogService.Load` is responsible for file/profile selection and returned metadata.
+It transfers ownership of the loaded table to `logdata.Store.Add`; callers must
+not modify the table after registration. The store is independent of Wails and
+uses its own mutex only to register or claim tables. Encoding happens after the
+lock is released. Other asset requests pass through to the next HTTP handler.
+
+`Table.ColumnBytes` describes the wire length. `Table.WriteColumns` writes bounded
+chunks, preserves the existing bit representation for channels, and reports
+writer failures or short writes. Input columns must already be aligned by the
+loader. No new parsing, rename, resampling, or retention policy is introduced.

@@ -2,10 +2,13 @@ package live
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"net/netip"
+	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,6 +16,7 @@ import (
 	"dawg_viewer/internal/config"
 	"dawg_viewer/internal/itv"
 	"dawg_viewer/internal/link"
+	"dawg_viewer/internal/logfile"
 )
 
 const (
@@ -23,6 +27,14 @@ const (
 type Row struct {
 	T float64            `json:"t"`
 	V map[string]float64 `json:"v"`
+
+	raw []rawValue // uncalibrated device values for the backup log; cleared before the row is sent
+}
+
+type rawValue struct {
+	id   uint8
+	name string
+	v    float32
 }
 
 type Frame struct {
@@ -56,6 +68,11 @@ type Status struct {
 	Ignored []IgnoredSender `json:"ignored"`
 	Error   string          `json:"error"`
 
+	Timing   string `json:"timing"`
+	LateRows uint64 `json:"lateRows"`
+
+	Recording string `json:"recording"` // backup log being written, empty when off
+
 	StartedAt int64 `json:"startedAt"`
 }
 
@@ -75,6 +92,9 @@ type Options struct {
 	ConfigDir  string
 	FrameRate  int
 	StaleAfter time.Duration
+	// RecordDir, when set, is where the session writes a backup log of every
+	// value it receives. Empty turns the backup off.
+	RecordDir string
 }
 
 type Session struct {
@@ -87,6 +107,9 @@ type Session struct {
 	mu       sync.Mutex
 	status   Status
 	channels []Channel
+
+	calibrations chan map[string]config.Calibration
+	recordDir    chan string
 }
 
 func Start(parent context.Context, opts Options, sink Sink) (*Session, error) {
@@ -104,7 +127,15 @@ func Start(parent context.Context, opts Options, sink Sink) (*Session, error) {
 		return nil, err
 	}
 
-	s := &Session{opts: opts, sink: sink, cancel: cancel, listener: lst, done: make(chan struct{})}
+	s := &Session{
+		opts:         opts,
+		sink:         sink,
+		cancel:       cancel,
+		listener:     lst,
+		done:         make(chan struct{}),
+		calibrations: make(chan map[string]config.Calibration, 1),
+		recordDir:    make(chan string, 1),
+	}
 	h := newHub(opts, s)
 	h.status.Listen = lst.Addr().String()
 	s.status = h.status
@@ -124,6 +155,22 @@ func (s *Session) Stop() {
 	s.cancel()
 	<-s.done
 	s.listener.Close()
+}
+
+func (s *Session) SetCalibrations(c map[string]config.Calibration) {
+	select {
+	case s.calibrations <- c:
+	case <-s.done:
+	}
+}
+
+// SetRecordDir turns the backup log on (a folder) or off (""). Turning it on
+// starts a new file at the next data row.
+func (s *Session) SetRecordDir(dir string) {
+	select {
+	case s.recordDir <- dir:
+	case <-s.done:
+	}
 }
 
 func (s *Session) Status() Status {
@@ -151,7 +198,6 @@ func discoverLoop(ctx context.Context, d config.Discovery, out chan<- link.Found
 					return
 				}
 				wait = 15 * time.Second
-				break
 			}
 		}
 		select {
@@ -177,7 +223,11 @@ type hub struct {
 	channels   []Channel
 	unknown    map[uint8]bool
 
-	pending []Row
+	pending   []Row
+	pendingTx []float64
+	clock     timebase
+	timing    string
+	lastOut   float64
 
 	lastRx     time.Time
 	lastTx     float64
@@ -191,11 +241,15 @@ type hub struct {
 	device       netip.Addr
 	deviceSource string
 
-	strict     bool
-	configAddr netip.Addr
-	discovered netip.Addr
-	ignored    map[netip.Addr]uint64
-	status     Status
+	strict      bool
+	configAddrs map[netip.Addr]bool
+	discovered  map[netip.Addr]bool
+	ignored     map[netip.Addr]uint64
+	status      Status
+
+	rec       *logfile.Recorder
+	recFailed bool
+	recBase   float64 // row time of the backup's first sample; its timestamps count from here
 }
 
 func newHub(opts Options, s *Session) *hub {
@@ -212,7 +266,9 @@ func newHub(opts Options, s *Session) *hub {
 		known:      map[string]bool{},
 		unknown:    map[uint8]bool{},
 		ignored:    map[netip.Addr]uint64{},
+		discovered: map[netip.Addr]bool{},
 		nameReqErr: make(chan error, 1),
+		lastOut:    math.Inf(-1),
 	}
 	if _, ok := h.names[idTimeTx]; !ok {
 		h.names[idTimeTx] = "Time_tx"
@@ -223,24 +279,22 @@ func newHub(opts Options, s *Session) *hub {
 			h.names[uint8(id)] = name
 		}
 	}
-	var calErrs []string
-	for name, c := range p.Calibrations {
-		conv, err := c.Converter()
-		if err != nil {
-			calErrs = append(calErrs, fmt.Sprintf("calibration %s: %v", name, err))
-			continue
-		}
-		h.calibrate[name] = conv
-	}
+	calErrs := h.setCalibrations(p.Calibrations)
 	if p.Address != "" {
 		if a, err := netip.ParseAddr(p.Address); err == nil {
 			h.device, h.deviceSource = a, "config"
-			h.configAddr = a
 		}
 	}
+	configured := map[netip.Addr]bool{}
+	for _, raw := range append([]string{p.Address}, p.AcceptedAddresses...) {
+		if a, err := netip.ParseAddr(raw); err == nil {
+			configured[a.Unmap()] = true
+		}
+	}
+	h.configAddrs = configured
 
 	onlyFromDevice := p.Telemetry.OnlyFromDevice == nil || *p.Telemetry.OnlyFromDevice
-	h.strict = onlyFromDevice && (p.Discovery.Enabled || h.configAddr.IsValid())
+	h.strict = onlyFromDevice && (p.Discovery.Enabled || len(h.configAddrs) > 0)
 	h.status = Status{
 		Profile:      p.ID,
 		ProfileName:  p.Name,
@@ -253,6 +307,21 @@ func newHub(opts Options, s *Session) *hub {
 	}
 	h.rateSince = h.start
 	return h
+}
+
+func (h *hub) setCalibrations(cals map[string]config.Calibration) []string {
+	var errs []string
+	h.calibrate = map[string]calib.Converter{}
+	for name, c := range cals {
+		conv, err := c.Converter()
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("calibration %s: %v", name, err))
+			continue
+		}
+		h.calibrate[name] = conv
+	}
+	sort.Strings(errs)
+	return errs
 }
 
 func (h *hub) run(ctx context.Context, packets <-chan link.Packet, lst *link.Listener, found <-chan link.Found) {
@@ -268,7 +337,8 @@ func (h *hub) run(ctx context.Context, packets <-chan link.Packet, lst *link.Lis
 	for {
 		select {
 		case <-ctx.Done():
-			h.flush()
+			h.flush(true)
+			h.closeRecording()
 			h.saveNames()
 			h.status.State = "stopped"
 			h.publishStatus(time.Now())
@@ -283,18 +353,28 @@ func (h *hub) run(ctx context.Context, packets <-chan link.Packet, lst *link.Lis
 				h.publishStatus(time.Now())
 			}
 		case f := <-found:
-			h.device, h.deviceSource = f.Addr, "discovery"
-			h.discovered = f.Addr
+			h.discovered[f.Addr] = true
+			if h.deviceSource != "telemetry" {
+				h.device, h.deviceSource = f.Addr, "discovery"
+			}
 			delete(h.ignored, f.Addr)
 			h.status.Firmware = f.Firmware
+		case c := <-h.session.calibrations:
+			if errs := h.setCalibrations(c); len(errs) > 0 {
+				h.status.Error = errs[0]
+			}
+		case dir := <-h.session.recordDir:
+			h.setRecordDir(dir)
+			h.publishStatus(time.Now())
 		case err := <-h.nameReqErr:
 			h.nameReqRun = false
 			if err != nil {
 				h.status.Error = "name request failed: " + err.Error()
 			}
 		case <-frameT.C:
-			h.flush()
+			h.flush(false)
 		case now := <-statusT.C:
+			h.flushRecording()
 			h.publishStatus(now)
 		case <-saveT.C:
 			h.saveNames()
@@ -316,9 +396,10 @@ func (h *hub) handle(ctx context.Context, p link.Packet) {
 	}
 	h.status.Packets++
 	h.rateCount++
-	if h.deviceSource != "discovery" && p.From.IsValid() && !p.From.IsLoopback() {
+	if p.From.IsValid() && !p.From.IsLoopback() && (h.deviceSource != "telemetry" || h.device != p.From) {
 		h.device, h.deviceSource = p.From, "telemetry"
 	}
+	delete(h.ignored, p.From)
 
 	for _, f := range fields {
 		if f.ID == idCommand && !f.IsText() {
@@ -350,6 +431,9 @@ func (h *hub) handle(ctx context.Context, p link.Packet) {
 			continue
 		}
 		row.V[name] = v
+		if h.opts.RecordDir != "" {
+			row.raw = append(row.raw, rawValue{f.ID, name, float32(f.Num)})
+		}
 	}
 	if needNames {
 		h.requestNames(ctx, p.At)
@@ -363,12 +447,18 @@ func (h *hub) handle(ctx context.Context, p link.Packet) {
 		row.V["RX_INT"] = float64(p.At.Sub(h.lastRx).Microseconds()) / 1000
 	}
 	h.lastRx = p.At
+	h.timing = "arrival"
+	txSec := math.NaN()
 	if tx, ok := row.V[h.names[idTimeTx]]; ok {
 		if h.haveTx {
 			row.V["TX_INT"] = tx - h.lastTx
 		}
 		h.lastTx, h.haveTx = tx, true
+		txSec = tx / 1000
+		row.T = h.clock.place(row.T, txSec)
+		h.timing = "device"
 	}
+	h.status.Timing = h.timing
 	for k, v := range row.V {
 		h.latest[k] = v
 	}
@@ -384,10 +474,11 @@ func (h *hub) handle(ctx context.Context, p link.Packet) {
 
 	h.noteChannels(row.V)
 	h.pending = append(h.pending, row)
+	h.pendingTx = append(h.pendingTx, txSec)
 }
 
 func (h *hub) accepts(a netip.Addr) bool {
-	return a.IsValid() && (a == h.discovered || a == h.configAddr)
+	return a.IsValid() && (h.discovered[a.Unmap()] || h.configAddrs[a.Unmap()])
 }
 
 func (h *hub) learnName(id uint8, name string) {
@@ -444,12 +535,48 @@ func (h *hub) noteChannels(v map[string]float64) {
 	h.session.sink.Channels(list)
 }
 
-func (h *hub) flush() {
+func (h *hub) flush(all bool) {
 	if len(h.pending) == 0 {
 		return
 	}
-	h.session.sink.Frame(Frame{Rows: h.pending})
-	h.pending = nil
+	for i, tx := range h.pendingTx {
+		if !math.IsNaN(tx) {
+			r := &h.pending[i]
+			r.T = tx + h.clock.offset
+			r.V["RX_DELAY"] = r.V["Time_rx"] - r.T*1000
+		}
+	}
+	idx := make([]int, len(h.pending))
+	for i := range idx {
+		idx[i] = i
+	}
+	sort.SliceStable(idx, func(a, b int) bool { return h.pending[idx[a]].T < h.pending[idx[b]].T })
+	rows := make([]Row, len(idx))
+	txs := make([]float64, len(idx))
+	for i, j := range idx {
+		rows[i], txs[i] = h.pending[j], h.pendingTx[j]
+	}
+	h.pending, h.pendingTx = rows, txs
+	n := len(h.pending)
+	if !all && h.timing == "device" {
+		horizon := time.Since(h.start).Seconds() - holdBack
+		n = sort.Search(n, func(i int) bool { return h.pending[i].T > horizon })
+		if n == 0 {
+			return
+		}
+	}
+	out := h.pending[:n:n]
+	for i := range out {
+		if out[i].T <= h.lastOut {
+			out[i].T = h.lastOut + 1e-6
+			h.status.LateRows++
+		}
+		h.lastOut = out[i].T
+	}
+	h.record(out)
+	h.session.sink.Frame(Frame{Rows: out})
+	h.pending = append([]Row(nil), h.pending[n:]...)
+	h.pendingTx = append([]float64(nil), h.pendingTx[n:]...)
 }
 
 func (h *hub) publishStatus(now time.Time) {
@@ -473,6 +600,10 @@ func (h *hub) publishStatus(now time.Time) {
 	}
 	if h.device.IsValid() {
 		st.DeviceIP, st.DeviceSource = h.device.String(), h.deviceSource
+	}
+	st.Recording = ""
+	if h.rec != nil {
+		st.Recording = h.rec.Path()
 	}
 	st.UnknownIDs = st.UnknownIDs[:0]
 	for id := range h.unknown {
@@ -503,4 +634,97 @@ func (h *hub) saveNames() {
 	if err := config.SaveNames(h.opts.ConfigDir, h.opts.Profile.ID, h.names); err == nil {
 		h.namesDirty = false
 	}
+}
+
+// record appends rows to the backup log, opening it on the first row. Times
+// are the rows' final times, as ms after the first recorded row (rows leave
+// flush in increasing time order), so the backup matches what the Live tab
+// plotted, across device restarts too.
+func (h *hub) record(rows []Row) {
+	if h.opts.RecordDir == "" || h.recFailed {
+		for i := range rows {
+			rows[i].raw = nil
+		}
+		return
+	}
+	if h.rec == nil {
+		rec, err := openRecording(h.opts.RecordDir, h.opts.Profile.ID, time.Now())
+		if err != nil {
+			h.recordingFailed(err)
+			h.record(rows)
+			return
+		}
+		h.rec, h.recBase = rec, rows[0].T
+	}
+	for i := range rows {
+		ts := uint32(math.Round(math.Max(0, rows[i].T-h.recBase) * 1000))
+		for _, r := range rows[i].raw {
+			if err := h.rec.Write(logfile.LogEntry{TimeStampMS: ts, ID: r.id, Value: r.v}, r.name); err != nil {
+				h.recordingFailed(err)
+				h.record(rows[i:])
+				return
+			}
+		}
+		rows[i].raw = nil
+	}
+}
+
+func (h *hub) setRecordDir(dir string) {
+	if dir == h.opts.RecordDir && !h.recFailed {
+		return
+	}
+	h.closeRecording()
+	h.opts.RecordDir, h.recFailed = dir, false
+}
+
+func (h *hub) flushRecording() {
+	if h.rec != nil {
+		if err := h.rec.Flush(); err != nil {
+			h.recordingFailed(err)
+		}
+	}
+}
+
+func (h *hub) closeRecording() {
+	if h.rec != nil {
+		if err := h.rec.Close(); err != nil {
+			h.status.Error = "backup log: " + err.Error()
+		}
+		h.rec = nil
+	}
+}
+
+// recordingFailed stops the backup for the rest of the session; live data keeps flowing.
+func (h *hub) recordingFailed(err error) {
+	h.status.Error = "backup log stopped: " + err.Error()
+	h.recFailed = true
+	if h.rec != nil {
+		h.rec.Close()
+		h.rec = nil
+	}
+}
+
+// openRecording creates <start UTC>_live_<profile>.csv in dir, adding -2, -3, …
+// if a recording that started in the same second already used the name.
+func openRecording(dir, profile string, start time.Time) (*logfile.Recorder, error) {
+	base := start.UTC().Format("2006-01-02_15-04-05") + "_live_" + fileSafe(profile)
+	for n := 1; ; n++ {
+		name := base + ".csv"
+		if n > 1 {
+			name = fmt.Sprintf("%s-%d.csv", base, n)
+		}
+		rec, err := logfile.CreateRecording(dir, name)
+		if !errors.Is(err, os.ErrExist) || n == 100 {
+			return rec, err
+		}
+	}
+}
+
+func fileSafe(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '-' || r == '_' || r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' {
+			return r
+		}
+		return '_'
+	}, s)
 }

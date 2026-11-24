@@ -141,13 +141,28 @@ func cobsDecode(in []byte) []byte {
 
 func WriteCSV(w io.Writer, log *Log) error {
 	bw := bufio.NewWriter(w)
-	fmt.Fprintln(bw, "timestamp_ms,id,signal,value")
+	bw.WriteString(longHeader)
+	var line []byte
 	for _, e := range log.Entries {
 		name, ok := log.Names[e.ID]
 		if !ok {
 			name = fmt.Sprintf("UNKNOWN_%d", e.ID)
 		}
-		fmt.Fprintf(bw, "%d,%d,%s,%s\n", e.TimeStampMS, e.ID, csvField(name), strconv.FormatFloat(float64(e.Value), 'f', -1, 32))
+		line = appendLongRow(line[:0], e, name)
+		bw.Write(line)
 	}
 	return bw.Flush()
+}
+
+const longHeader = "timestamp_ms,id,signal,value\n"
+
+func appendLongRow(dst []byte, e LogEntry, name string) []byte {
+	dst = strconv.AppendUint(dst, uint64(e.TimeStampMS), 10)
+	dst = append(dst, ',')
+	dst = strconv.AppendUint(dst, uint64(e.ID), 10)
+	dst = append(dst, ',')
+	dst = append(dst, csvField(name)...)
+	dst = append(dst, ',')
+	dst = strconv.AppendFloat(dst, float64(e.Value), 'f', -1, 32)
+	return append(dst, '\n')
 }

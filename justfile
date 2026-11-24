@@ -4,10 +4,10 @@ set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-ExecutionPoli
 default:
     @just --list --unsorted
 
-# Install Go and frontend dependencies
+# Install Go modules and the exact frontend dependency versions in package-lock.json
 install:
     go mod download
-    npm --prefix frontend install
+    npm --prefix frontend ci
 
 # Run the app with hot reload
 run:

@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { createViewSync, type Range } from '../plot/sync'
-import { observable, store } from './connection'
+import { observable, onLiveFrame, store } from './connection'
 
 export const liveSync = createViewSync('live')
 
@@ -22,7 +22,7 @@ function apply() {
   liveSync.setRange(expected)
 }
 
-store.subscribe(apply)
+onLiveFrame(apply)
 
 liveSync.onRange((r) => {
   const s = state.get()

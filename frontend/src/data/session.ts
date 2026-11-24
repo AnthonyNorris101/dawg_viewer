@@ -1,6 +1,7 @@
 export interface Channel {
   id: string
   name: string
+  label?: string
   group: string
   unit: string
   color: string
@@ -11,6 +12,7 @@ export interface Channel {
 export interface Session {
   name: string
   path: string
+  source?: string
   note: string
   sampleRate: number
   time: Float64Array
@@ -30,3 +32,5 @@ export const CHANNEL_COLORS = [
   '#f472b6',
   '#94a3b8',
 ]
+
+export const channelTitle = (c: Pick<Channel, 'name' | 'label'>) => c.label || c.name

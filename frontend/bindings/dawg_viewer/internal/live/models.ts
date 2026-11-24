@@ -41,5 +41,12 @@ export interface Status {
     "filtering": boolean;
     "ignored": IgnoredSender[] | null;
     "error": string;
+    "timing": string;
+    "lateRows": number;
+
+    /**
+     * backup log being written, empty when off
+     */
+    "recording": string;
     "startedAt": number;
 }

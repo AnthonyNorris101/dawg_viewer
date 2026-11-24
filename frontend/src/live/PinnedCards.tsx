@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef } from 'react'
 import type { ChannelMeta } from '../../bindings/dawg_viewer/internal/config/models'
-import { status, store } from './connection'
+import { isLiveShown, onLiveFrame, status, store } from './connection'
 import { ageColor, formatValue, level } from './format'
 
 const LEVEL_BG = {
@@ -45,8 +45,8 @@ export const PinnedCards = memo(function PinnedCards({
       }
     }
     update()
-    const off = store.subscribe(update)
-    const timer = setInterval(update, 500)
+    const off = onLiveFrame(update)
+    const timer = setInterval(() => isLiveShown() && update(), 500)
     return () => {
       off()
       clearInterval(timer)

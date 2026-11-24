@@ -1,5 +1,6 @@
 import { LogService } from '../../bindings/dawg_viewer/services'
-import { CHANNEL_COLORS, type Channel, type Session } from '../data/session'
+import type { Session } from '../data/session'
+import { sessionFromColumns } from '../data/columns'
 import { info } from '../live/connection'
 
 export async function openLog(path: string): Promise<Session> {
@@ -15,27 +16,7 @@ export async function openLog(path: string): Promise<Session> {
     throw new Error(`The data for ${log.name} arrived incomplete`)
   }
 
-  const metas = info.get()?.channels ?? {}
-  const time = new Float64Array(buf, 0, rows)
-  const channels: Channel[] = channelsIn.map((c, i) => ({
-    id: c.name,
-    name: c.name,
-    group: 'Log',
-    unit: c.unit || metas[c.name]?.unit || '',
-    color: CHANNEL_COLORS[i % CHANNEL_COLORS.length],
-    precision: metas[c.name]?.precision ?? 2,
-    data: new Float64Array(buf, (i + 1) * rows * 8, rows),
-  }))
-  const duration = rows > 1 ? time[rows - 1] - time[0] : 0
-  return {
-    name: log.name,
-    path: log.path,
-    note: log.note,
-    sampleRate: duration > 0 ? Math.round((rows - 1) / duration) : 0,
-    time,
-    channels,
-    byId: new Map(channels.map((c) => [c.id, c])),
-  }
+  return sessionFromColumns(buf, rows, channelsIn, log, info.get()?.channels ?? {})
 }
 
 export async function pickAndOpenLog(): Promise<Session | null> {

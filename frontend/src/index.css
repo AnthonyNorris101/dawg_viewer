@@ -16,6 +16,9 @@ html,
 body,
 #root {
   height: 100%;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
 }
 
 html {
@@ -23,5 +26,36 @@ html {
 }
 
 body {
+  margin: 0;
   @apply bg-zinc-950 text-zinc-100 antialiased;
+}
+
+@keyframes sensor-pulse {
+  from {
+    opacity: 1;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.8);
+  }
+}
+
+.sensor-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sensor-pulse 0.7s ease-out 2;
+}
+
+@container (max-width: 720px) {
+  .live-bento-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none !important;
+  }
+
+  .live-bento-grid > [data-graph-id] {
+    grid-column: 1 !important;
+    grid-row: auto !important;
+    min-height: 17rem;
+  }
 }

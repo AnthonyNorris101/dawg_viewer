@@ -45,21 +45,58 @@ const EMPTY_STATUS: Status = {
   ignored: [],
   error: '',
   startedAt: 0,
+  timing: '',
+  lateRows: 0,
+  recording: '',
 }
 
+export const emptyStatus = (): Status => ({ ...EMPTY_STATUS, unknownIds: [], ignored: [] })
+
 export const status = observable<Status>(EMPTY_STATUS)
+export const testMode = observable(false)
 export const channels = observable<Channel[]>([])
 export const info = observable<Info | null>(null)
 
 const colors = new Map<string, string>()
 
 export function colorFor(name: string): string {
+  const custom = info.get()?.channels?.[name]?.color
+  if (custom) return custom
   let c = colors.get(name)
   if (!c) {
     c = CHANNEL_COLORS[colors.size % CHANNEL_COLORS.length]
     colors.set(name, c)
   }
   return c
+}
+
+let liveShown = false
+let frameQueued = 0
+const frameListeners = new Set<() => void>()
+
+const runFrame = () => {
+  frameQueued = 0
+  for (const fn of frameListeners) fn()
+}
+
+const queueFrame = () => {
+  if (liveShown && !frameQueued) frameQueued = requestAnimationFrame(runFrame)
+}
+
+store.subscribe(queueFrame)
+
+export function setLiveShown(shown: boolean) {
+  liveShown = shown
+  queueFrame()
+}
+
+export const isLiveShown = () => liveShown
+
+export function onLiveFrame(fn: () => void) {
+  frameListeners.add(fn)
+  return () => {
+    frameListeners.delete(fn)
+  }
 }
 
 function applyStatus(next: Status) {
@@ -72,9 +109,15 @@ let started = false
 export function startLive() {
   if (started) return
   started = true
-  Events.On('live:frame', (e) => store.append(e.data.rows ?? []))
-  Events.On('live:status', (e) => applyStatus(e.data))
-  Events.On('live:channels', (e) => channels.set(e.data ?? []))
+  Events.On('live:frame', (e) => {
+    if (!testMode.get()) store.append(e.data.rows ?? [])
+  })
+  Events.On('live:status', (e) => {
+    if (!testMode.get()) applyStatus(e.data)
+  })
+  Events.On('live:channels', (e) => {
+    if (!testMode.get()) channels.set(e.data ?? [])
+  })
   void refresh()
 }
 
@@ -86,6 +129,7 @@ export async function refresh() {
   ])
   info.set(i)
   store.setMaxRows(i.settings.historyMinutes * 60 * MAX_RATE_HZ)
+  if (testMode.get()) return
   applyStatus(s)
   channels.set(c ?? [])
 }
@@ -93,3 +137,4 @@ export async function refresh() {
 export const useStatus = () => useSyncExternalStore(status.subscribe, status.get)
 export const useChannels = () => useSyncExternalStore(channels.subscribe, channels.get)
 export const useInfo = () => useSyncExternalStore(info.subscribe, info.get)
+export const useTestMode = () => useSyncExternalStore(testMode.subscribe, testMode.get)

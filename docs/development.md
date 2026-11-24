@@ -67,7 +67,8 @@ files as `logfile.Encode`. See [device-protocol.md](device-protocol.md).
 3. **Release** (pushes to `main` only): tag `v<info.version>-build.<run>`,
    version from `build/config.yml`, all files plus `SHA256SUMS.txt`.
 
-Pull requests run steps 1 and 2 so packaging problems show up before merging.
+Pull requests run step 1, including the frontend production build. The platform
+build/packaging job skips pull requests; it runs for non-PR events.
 
 ### Version number
 

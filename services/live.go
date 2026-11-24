@@ -45,7 +45,15 @@ type Info struct {
 	ProfileErrors []config.ProfileError         `json:"profileErrors"`
 	Active        string                        `json:"active"`
 	Channels      map[string]config.ChannelMeta `json:"channels"`
+	Calibrations  map[string]config.Calibration `json:"calibrations"`
+	Car           config.Car                    `json:"car"`
 	SettingsError string                        `json:"settingsError"`
+}
+
+type ChannelSettings struct {
+	Name        string              `json:"name"`
+	Meta        config.ChannelMeta  `json:"meta"`
+	Calibration *config.Calibration `json:"calibration"`
 }
 
 type LiveService struct {
@@ -110,6 +118,7 @@ func (s *LiveService) infoLocked() Info {
 		Settings:      s.settings,
 		ProfileErrors: s.badProfiles,
 		Channels:      map[string]config.ChannelMeta{},
+		Calibrations:  map[string]config.Calibration{},
 	}
 	if s.settingsErr != nil {
 		info.SettingsError = s.settingsErr.Error()
@@ -119,9 +128,53 @@ func (s *LiveService) infoLocked() Info {
 	}
 	if s.active != nil {
 		info.Active = s.active.ID
-		info.Channels = s.active.Channels
+		if s.active.Channels != nil {
+			info.Channels = s.active.Channels
+		}
+		if s.active.Calibrations != nil {
+			info.Calibrations = s.active.Calibrations
+		}
+		info.Car = s.active.Car
 	}
 	return info
+}
+
+func (s *LiveService) SaveChannel(c ChannelSettings) (Info, error) {
+	return s.editProfile(func(file string) error {
+		return config.SaveChannel(file, c.Name, c.Meta, c.Calibration)
+	})
+}
+
+func (s *LiveService) SaveCar(car config.Car) (Info, error) {
+	return s.editProfile(func(file string) error { return config.SaveCar(file, car) })
+}
+
+func (s *LiveService) editProfile(edit func(file string) error) (Info, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active == nil {
+		return s.infoLocked(), errors.New("no device selected; pick one in the Live tab")
+	}
+	id := s.active.ID
+	if err := edit(s.active.File); err != nil {
+		return s.infoLocked(), err
+	}
+	if err := s.loadLocked(); err != nil {
+		return s.infoLocked(), err
+	}
+	s.active = nil
+	for i := range s.profiles {
+		if s.profiles[i].ID == id {
+			s.active = &s.profiles[i]
+		}
+	}
+	if s.active == nil {
+		return s.infoLocked(), fmt.Errorf("device profile %q no longer loads", id)
+	}
+	if s.session != nil {
+		s.session.SetCalibrations(s.active.Calibrations)
+	}
+	return s.infoLocked(), nil
 }
 
 func (s *LiveService) Connect(profileID string) error {
@@ -215,6 +268,7 @@ func (s *LiveService) connectLocked(id string) error {
 		ConfigDir:  s.dir.Path,
 		FrameRate:  s.settings.FrameRate,
 		StaleAfter: time.Duration(s.settings.StaleAfterS * float64(time.Second)),
+		RecordDir:  s.recordDir(),
 	}, emitter{})
 	if err != nil {
 		emitter{}.Status(live.Status{Profile: p.ID, ProfileName: p.Name, State: "error", Error: err.Error(), LastPacketMs: -1})
@@ -222,6 +276,28 @@ func (s *LiveService) connectLocked(id string) error {
 	}
 	s.session = sess
 	return nil
+}
+
+// SetLiveBackup turns the live backup log on or off, saves the choice to
+// settings.yaml and applies it to the running session without reconnecting.
+func (s *LiveService) SetLiveBackup(on bool) (Info, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.settings.LiveBackup = &on
+	if s.session != nil {
+		s.session.SetRecordDir(s.recordDir())
+	}
+	if err := config.SaveLiveBackup(s.dir.Path, on); err != nil {
+		return s.infoLocked(), fmt.Errorf("changed for this run, but couldn't save the choice to settings.yaml: %w", err)
+	}
+	return s.infoLocked(), nil
+}
+
+func (s *LiveService) recordDir() string {
+	if !s.settings.BackupLive() {
+		return ""
+	}
+	return config.ResolvePath(s.dir.Path, s.settings.LogsDir)
 }
 
 func (s *LiveService) stopLocked() {
