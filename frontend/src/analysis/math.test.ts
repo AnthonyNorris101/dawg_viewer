@@ -150,3 +150,41 @@ describe('filter channels', () => {
     expect(() => run('bandpass([Accel Z], 20, 3)')).toThrow(/below the high/)
   })
 })
+
+describe('element-wise operators and functions', () => {
+  const A = [1, -2, 0, NaN, 3.5, 1e308, -0]
+  const B = [2, 0, -0, 4, NaN, 1e308, 5]
+  const c = ctx({ A, B })
+  const t = (x: number) => x !== 0 && !Number.isNaN(x)
+  const cases: [string, (a: number, b: number) => number][] = [
+    ['A + B', (a, b) => a + b],
+    ['A - 2', (a) => a - 2],
+    ['2 / A', (a) => 2 / a],
+    ['A * B', (a, b) => a * b],
+    ['A % B', (a, b) => a % b],
+    ['A ^ 2', (a) => a ** 2],
+    ['A < B', (a, b) => Number(a < b)],
+    ['A == B', (a, b) => Number(a === b)],
+    ['A && B', (a, b) => Number(t(a) && t(b))],
+    ['A || 0', (a) => Number(t(a) || t(0))],
+    ['atan2(A, B)', (a, b) => Math.atan2(a, b)],
+    ['pow(2, A)', (a) => 2 ** a],
+    ['min(A, B)', (a, b) => Math.min(a, b)],
+    ['min(A, 3, B)', (a, b) => Math.min(a, 3, b)],
+    ['max(1, A)', (a) => Math.max(1, a)],
+    ['max(A, B, 0, 1)', (a, b) => Math.max(a, b, 0, 1)],
+    ['hypot(A, B)', (a, b) => Math.hypot(a, b)],
+    ['hypot(A, B, 2)', (a, b) => Math.hypot(a, b, 2)],
+    ['clamp(A, -1, B)', (a, b) => Math.min(b, Math.max(-1, a))],
+    ['if(A, B, 7)', (a, b) => (t(a) ? b : 7)],
+    ['A ? 7 : B', (a, b) => (t(a) ? 7 : b)],
+  ]
+
+  it.each(cases)('%s matches the value worked out per sample', (expr, f) => {
+    expect([...evaluate(expr, c)]).toEqual(A.map((a, i) => f(a, B[i])))
+  })
+
+  it('keeps constant-only arguments as a single value', () => {
+    expect([...evaluate('hypot(3, 4) + min(1, 2) * 10', c)]).toEqual(A.map(() => 15))
+  })
+})

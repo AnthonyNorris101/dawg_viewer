@@ -246,6 +246,39 @@ function mapN(vs: Val[], n: number, f: (xs: number[]) => number): Val {
   return out
 }
 
+// Fixed-arity versions of mapN for the common cases (every binary operator,
+// two- and three-argument functions). They pass values as plain arguments, so
+// no array is filled and spread per sample.
+function map2(a: Val, b: Val, n: number, f: (x: number, y: number) => number): Val {
+  if (typeof a === 'number' && typeof b === 'number') return f(a, b)
+  const out = new Float64Array(n)
+  if (typeof a === 'number') for (let i = 0; i < n; i++) out[i] = f(a, (b as Float64Array)[i])
+  else if (typeof b === 'number') for (let i = 0; i < n; i++) out[i] = f(a[i], b)
+  else for (let i = 0; i < n; i++) out[i] = f(a[i], b[i])
+  return out
+}
+
+function map3(
+  a: Val,
+  b: Val,
+  c: Val,
+  n: number,
+  f: (x: number, y: number, z: number) => number,
+): Val {
+  if (typeof a === 'number' && typeof b === 'number' && typeof c === 'number') return f(a, b, c)
+  const out = new Float64Array(n)
+  for (let i = 0; i < n; i++) out[i] = f(at(a, i), at(b, i), at(c, i))
+  return out
+}
+
+// min, max and hypot take any number of arguments; two or three go through
+// the fixed-arity paths.
+function variadic(vs: Val[], n: number, f: (...xs: number[]) => number): Val {
+  if (vs.length === 2) return map2(vs[0], vs[1], n, (x, y) => f(x, y))
+  if (vs.length === 3) return map3(vs[0], vs[1], vs[2], n, (x, y, z) => f(x, y, z))
+  return mapN(vs, n, (xs) => f(...xs))
+}
+
 function column(v: Val, n: number): Float64Array {
   return typeof v === 'number' ? new Float64Array(n).fill(v) : v
 }
@@ -403,37 +436,37 @@ export const FUNCS: Record<string, Func> = {
   atan2: {
     arity: [2, 2],
     help: 'atan2(y, x)',
-    run: (args, ctx) => mapN(args, ctx.n, ([y, x]) => Math.atan2(y, x)),
+    run: ([y, x], ctx) => map2(y, x, ctx.n, Math.atan2),
   },
   pow: {
     arity: [2, 2],
     help: 'pow(x, y)',
-    run: (args, ctx) => mapN(args, ctx.n, ([x, y]) => x ** y),
+    run: ([x, y], ctx) => map2(x, y, ctx.n, (p, q) => p ** q),
   },
   min: {
     arity: [2, Infinity],
     help: 'min(a, b, …)',
-    run: (args, ctx) => mapN(args, ctx.n, (xs) => Math.min(...xs)),
+    run: (args, ctx) => variadic(args, ctx.n, Math.min),
   },
   max: {
     arity: [2, Infinity],
     help: 'max(a, b, …)',
-    run: (args, ctx) => mapN(args, ctx.n, (xs) => Math.max(...xs)),
+    run: (args, ctx) => variadic(args, ctx.n, Math.max),
   },
   hypot: {
     arity: [2, Infinity],
     help: 'hypot(a, b, …) √(a²+b²+…)',
-    run: (args, ctx) => mapN(args, ctx.n, (xs) => Math.hypot(...xs)),
+    run: (args, ctx) => variadic(args, ctx.n, Math.hypot),
   },
   clamp: {
     arity: [3, 3],
     help: 'clamp(x, lo, hi)',
-    run: (args, ctx) => mapN(args, ctx.n, ([x, lo, hi]) => Math.min(hi, Math.max(lo, x))),
+    run: ([x, lo, hi], ctx) => map3(x, lo, hi, ctx.n, (v, l, h) => Math.min(h, Math.max(l, v))),
   },
   if: {
     arity: [3, 3],
     help: 'if(cond, a, b)',
-    run: (args, ctx) => mapN(args, ctx.n, ([c, x, y]) => (truthy(c) ? x : y)),
+    run: ([c, x, y], ctx) => map3(c, x, y, ctx.n, (k, p, q) => (truthy(k) ? p : q)),
   },
   deriv: {
     arity: [1, 1],
@@ -547,7 +580,7 @@ function evalNode(node: Node, ctx: EvalContext): Val {
       const f = BINARY[node.op]
       const x = evalNode(node.a, ctx)
       const y = evalNode(node.b, ctx)
-      return mapN([x, y], ctx.n, ([p, q]) => f(p, q))
+      return map2(x, y, ctx.n, f)
     }
     case 'if':
       return FUNCS.if.run(
