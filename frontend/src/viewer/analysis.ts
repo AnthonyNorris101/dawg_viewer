@@ -18,6 +18,7 @@ import {
 import type { ChannelMeta } from '../../bindings/dawg_viewer/internal/config/models'
 import { defaultGroup } from '../data/groups'
 import { CHANNEL_COLORS, type Channel, type Session } from '../data/session'
+import { mapColumn } from '../data/columns'
 import { findLaunches, speedFromDistance } from '../analysis/launch'
 import type { LapMode, TrackSettings } from '../analysis/settings'
 
@@ -95,7 +96,7 @@ export function positionFusion(
     time: base.time,
     lat: rawGps.lat,
     lon: rawGps.lon,
-    speed: sp ? Float64Array.from(sp.data, (v) => v * k) : undefined,
+    speed: sp ? mapColumn(sp.data, (v) => v * k) : undefined,
     yaw: byName('yaw', 'heading', 'yawangle', 'course')?.data,
     latAccel: byName('accely', 'acc_y', 'latacc')?.data,
   })
@@ -128,10 +129,11 @@ export function sessionLaps(
   if (mode === 'gates') return buildRuns(time, distance, pairGates(crossings, finishes))
   if (mode === 'launch') {
     const sp = findSpeed(base.channels)
+    const k = sp ? TO_MPS[guessSpeedUnit(sp.unit)] : 1
     const ground = distance
       ? speedFromDistance(time, distance)
       : sp
-        ? Float64Array.from(sp.data, (v) => v * TO_MPS[guessSpeedUnit(sp.unit)])
+        ? mapColumn(sp.data, (v) => v * k)
         : null
     const found = ground ? findLaunches({ time, ground, window: 120 }) : []
     const length = runLength ?? 75

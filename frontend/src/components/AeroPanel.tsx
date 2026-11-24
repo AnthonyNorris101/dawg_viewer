@@ -12,6 +12,7 @@ import { speedFromDistance } from '../analysis/launch'
 import { findSpeed, guessSpeedUnit, TO_MPS } from '../analysis/track'
 import { useCar } from '../data/car'
 import { channelTitle, type Channel, type Session } from '../data/session'
+import { mapColumn } from '../data/columns'
 import { drawAxes, mountCanvas, plotFrame, SLOT_COLORS } from '../plot/canvas'
 import type { ViewSync } from '../plot/sync'
 import type { LayoutAction, Panel } from '../state/layout'
@@ -43,8 +44,7 @@ const MEASURED = '#fafafa'
 const findAccel = (channels: Channel[], axis: 'x' | 'y') =>
   channels.find((c) => new RegExp(`^acc(el)?[ _]?${axis}$`, 'i').test(c.name))
 
-const inG = (c: Channel) =>
-  /m\/s/i.test(c.unit) ? Float64Array.from(c.data, (v) => v / G) : c.data
+const inG = (c: Channel) => (/m\/s/i.test(c.unit) ? mapColumn(c.data, (v) => v / G) : c.data)
 
 function Swatch({ color, dash, label }: { color: string; dash?: boolean; label: string }) {
   return (
@@ -93,7 +93,7 @@ export const AeroPanel = memo(function AeroPanel({
     let unit: 'mph' | 'km/h' = 'km/h'
     if (sp) {
       const u = guessSpeedUnit(sp.unit)
-      speed = Float64Array.from(sp.data, (v) => v * TO_MPS[u])
+      speed = mapColumn(sp.data, (v) => v * TO_MPS[u])
       speedLabel = channelTitle(sp)
       if (u === 'mph') unit = 'mph'
     } else if (distance && distanceFromGps) {

@@ -12,6 +12,7 @@ import {
 } from '../analysis/launch'
 import { findSpeed, formatLapTime, guessSpeedUnit, TO_MPS, type Gps } from '../analysis/track'
 import { channelTitle, type Channel, type Session } from '../data/session'
+import { mapColumn } from '../data/columns'
 import { SLOT_COLORS } from '../plot/canvas'
 import { mountPlot, type MountedPlot } from '../plot/mountPlot'
 import { createViewSync } from '../plot/sync'
@@ -46,7 +47,7 @@ const NO_VALUE = '–'
 
 const toMps = (c: Channel) => {
   const k = TO_MPS[guessSpeedUnit(c.unit)]
-  return Float64Array.from(c.data, (v) => v * k)
+  return mapColumn(c.data, (v) => v * k)
 }
 
 function resample(time: ArrayLike<number>, data: ArrayLike<number>, start: number, grid: number[]) {
