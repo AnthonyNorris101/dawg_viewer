@@ -1,3 +1,5 @@
+import { selectKth } from './stats'
+
 export interface GGEnvelope {
   points: [number, number][]
   area: number
@@ -19,7 +21,12 @@ export function ggEnvelope(
   bins = GG_BINS,
   pct = GG_PERCENTILE,
 ): GGEnvelope | null {
-  const radii: number[][] = Array.from({ length: bins }, () => [])
+  let room = 0
+  for (const s of sets)
+    room += Math.max(0, Math.min(s.end, x.length - 1) - Math.max(0, s.start) + 1)
+  const radius = new Float64Array(room)
+  const dir = new Int32Array(room)
+  const perBin = new Int32Array(bins)
   let count = 0
   for (const s of sets) {
     for (let i = Math.max(0, s.start); i <= s.end && i < x.length; i++) {
@@ -28,15 +35,26 @@ export function ggEnvelope(
       if (!Number.isFinite(a) || !Number.isFinite(b)) continue
       const angle = Math.atan2(b, a)
       const k = Math.min(bins - 1, Math.floor(((angle + Math.PI) / (2 * Math.PI)) * bins))
-      radii[k].push(Math.hypot(a, b))
+      radius[count] = Math.hypot(a, b)
+      dir[count] = k
+      perBin[k]++
       count++
     }
   }
+  // Group the radii by direction in one buffer, then pick each direction's
+  // percentile in place instead of sorting it.
+  const offset = new Int32Array(bins + 1)
+  for (let k = 0; k < bins; k++) offset[k + 1] = offset[k] + perBin[k]
+  const grouped = new Float64Array(count)
+  const fill = offset.slice(0, bins)
+  for (let m = 0; m < count; m++) grouped[fill[dir[m]]++] = radius[m]
+
   const minPerBin = Math.max(3, Math.floor(count / bins / 50))
-  const r: (number | null)[] = radii.map((list) => {
-    if (list.length < minPerBin) return null
-    list.sort((p, q) => p - q)
-    return list[Math.min(list.length - 1, Math.floor(pct * (list.length - 1)))]
+  const r: (number | null)[] = Array.from({ length: bins }, (_, k) => {
+    const len = perBin[k]
+    if (len < minPerBin) return null
+    const lo = offset[k]
+    return selectKth(grouped, lo + Math.min(len - 1, Math.floor(pct * (len - 1))), lo, lo + len - 1)
   })
   const known = r.filter((v) => v != null).length
   if (known < bins / 2) return null

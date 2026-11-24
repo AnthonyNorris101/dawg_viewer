@@ -1,3 +1,4 @@
+import { selectKth } from './stats'
 import { validFix } from './track'
 
 const RAD = Math.PI / 180
@@ -25,8 +26,7 @@ const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a))
 
 function median(a: number[]): number {
   if (a.length === 0) return NaN
-  const s = [...a].sort((x, y) => x - y)
-  return s[Math.floor(s.length / 2)]
+  return selectKth(new Float64Array(a), Math.floor(a.length / 2))
 }
 
 export function fusePosition(inp: FusionInput): Fusion {

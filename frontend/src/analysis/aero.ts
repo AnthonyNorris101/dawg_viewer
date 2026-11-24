@@ -1,3 +1,5 @@
+import { selectKth } from './stats'
+
 export const G = 9.80665
 export const AERO_PERCENTILE = 0.98
 
@@ -35,29 +37,54 @@ export function gripBySpeed(
   minPoints = 30,
   pct = AERO_PERCENTILE,
 ): SpeedBin[] {
-  const buckets: number[][] = []
+  let room = 0
+  for (const s of sets)
+    room += Math.max(0, Math.min(s.end, speed.length - 1) - Math.max(0, s.start) + 1)
+  const value = new Float64Array(room)
+  const band = new Int32Array(room)
+  let count = 0
+  let bands = 0
   for (const s of sets) {
     for (let i = Math.max(0, s.start); i <= s.end && i < speed.length; i++) {
       const v = speed[i]
       const a = g[i]
       if (!Number.isFinite(v) || !Number.isFinite(a) || v < minSpeed) continue
       const k = Math.floor((v - minSpeed) / binWidth)
-      ;(buckets[k] ??= []).push(a)
+      value[count] = a
+      band[count] = k
+      if (k >= bands) bands = k + 1
+      count++
     }
   }
+  // Group the values by speed band in one buffer, then pick each band's
+  // percentile in place instead of sorting it.
+  const perBand = new Int32Array(bands)
+  for (let m = 0; m < count; m++) perBand[band[m]]++
+  const offset = new Int32Array(bands + 1)
+  for (let k = 0; k < bands; k++) offset[k + 1] = offset[k] + perBand[k]
+  const grouped = new Float64Array(count)
+  const fill = offset.slice(0, bands)
+  for (let m = 0; m < count; m++) grouped[fill[band[m]]++] = value[m]
+
   const out: SpeedBin[] = []
-  buckets.forEach((values, k) => {
-    if (!values || values.length < minPoints) return
-    values.sort((a, b) => a - b)
+  for (let k = 0; k < bands; k++) {
+    const len = perBand[k]
+    if (len === 0 || len < minPoints) continue
     const lo = minSpeed + k * binWidth
+    const first = offset[k]
     out.push({
       lo,
       hi: lo + binWidth,
       mid: lo + binWidth / 2,
-      n: values.length,
-      envelope: values[Math.min(values.length - 1, Math.floor(values.length * pct))],
+      n: len,
+      envelope: selectKth(
+        grouped,
+        first + Math.min(len - 1, Math.floor(len * pct)),
+        first,
+        first + len - 1,
+      ),
     })
-  })
+  }
   return out
 }
 

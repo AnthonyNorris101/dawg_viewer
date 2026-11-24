@@ -27,6 +27,37 @@ export function rangeStats(data: ArrayLike<number>, start: number, end: number):
   return { min, max, mean, std: Math.sqrt(Math.max(0, sq / count - mean * mean)), count }
 }
 
+// Quickselect: returns the value a sorted copy of a[lo..hi] would have at k and
+// reorders a[lo..hi] so nothing before k is larger and nothing after is smaller.
+// Average O(n), against O(n log n) plus a comparator call per step for sorting.
+// a must not hold NaN.
+export function selectKth(a: Float64Array, k: number, lo = 0, hi = a.length - 1): number {
+  while (hi > lo) {
+    const mid = (lo + hi) >> 1
+    const x = a[lo]
+    const y = a[mid]
+    const z = a[hi]
+    const pivot = x < y ? (y < z ? y : x < z ? z : x) : x < z ? x : y < z ? z : y
+    let i = lo
+    let j = hi
+    while (i <= j) {
+      while (a[i] < pivot) i++
+      while (a[j] > pivot) j--
+      if (i <= j) {
+        const t = a[i]
+        a[i] = a[j]
+        a[j] = t
+        i++
+        j--
+      }
+    }
+    if (k <= j) hi = j
+    else if (k >= i) lo = i
+    else break
+  }
+  return a[k]
+}
+
 export interface Histogram {
   lo: number
   hi: number

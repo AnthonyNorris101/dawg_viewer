@@ -54,4 +54,40 @@ describe('aero', () => {
       ),
     ).toBeNull()
   })
+
+  it('finds each speed band envelope exactly as a full sort would', () => {
+    let seed = 5
+    const r = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646
+    const n = 30000
+    const speed = Float64Array.from({ length: n }, () => r() * 40)
+    const g = Float64Array.from({ length: n }, () => Math.round(r() * 200) / 100)
+    speed[7] = NaN
+    const sets = [
+      { start: 0, end: 9999 },
+      { start: 15000, end: n - 1 },
+    ]
+    const buckets: number[][] = []
+    for (const s of sets) {
+      for (let i = s.start; i <= s.end; i++) {
+        const v = speed[i]
+        if (!Number.isFinite(v) || v < 3) continue
+        ;(buckets[Math.floor((v - 3) / 2)] ??= []).push(g[i])
+      }
+    }
+    const want = buckets.flatMap((values, k) => {
+      if (!values || values.length < 30) return []
+      values.sort((a, b) => a - b)
+      return [
+        {
+          k,
+          n: values.length,
+          envelope: values[Math.min(values.length - 1, Math.floor(values.length * 0.98))],
+        },
+      ]
+    })
+    const bins = gripBySpeed(speed, g, sets, 2)
+    expect(
+      bins.map((b) => ({ k: Math.round((b.lo - 3) / 2), n: b.n, envelope: b.envelope })),
+    ).toEqual(want)
+  })
 })

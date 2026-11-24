@@ -1,5 +1,6 @@
 import uPlot from 'uplot'
 import type { ViewSync } from './sync'
+import { selectKth } from '../analysis/stats'
 
 const FONT = '11px Inter, system-ui, sans-serif'
 const AXIS_STROKE = '#a1a1aa'
@@ -42,7 +43,9 @@ export interface PlotOptions {
 }
 
 function spikeFreeExtent(u: uPlot, key: string): [number, number] | null {
-  const values: number[] = []
+  const picks: { d: ArrayLike<number | null | undefined>; i0: number; i1: number; step: number }[] =
+    []
+  let room = 0
   for (let i = 1; i < u.series.length; i++) {
     const s = u.series[i]
     if (s.scale !== key || s.show === false) continue
@@ -50,15 +53,24 @@ function spikeFreeExtent(u: uPlot, key: string): [number, number] | null {
     const i0 = s.idxs?.[0] ?? 0
     const i1 = s.idxs?.[1] ?? d.length - 1
     const step = Math.max(1, Math.floor((i1 - i0 + 1) / SPIKE_SAMPLES))
+    picks.push({ d, i0, i1, step })
+    if (i1 >= i0) room += Math.floor((i1 - i0) / step) + 1
+  }
+  const values = new Float64Array(room)
+  let n = 0
+  for (const { d, i0, i1, step } of picks) {
     for (let j = i0; j <= i1; j += step) {
       const v = d[j]
-      if (v != null && Number.isFinite(v)) values.push(v)
+      if (v != null && Number.isFinite(v)) values[n++] = v
     }
   }
-  if (values.length < 50) return null
-  values.sort((a, b) => a - b)
-  const k = Math.floor(values.length * SPIKE_SHARE)
-  return [values[k], values[values.length - 1 - k]]
+  if (n < 50) return null
+  const k = Math.floor(n * SPIKE_SHARE)
+  // Two selects instead of a sort: after the first, everything from k on is
+  // at least values[k], so the second only needs to look there.
+  const lo = selectKth(values, k, 0, n - 1)
+  const hi = selectKth(values, n - 1 - k, k, n - 1)
+  return [lo, hi]
 }
 
 export interface MountedPlot {
