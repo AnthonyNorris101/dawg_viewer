@@ -3,7 +3,7 @@ import { memo, useEffect, useMemo, useRef, useState, type RefObject } from 'reac
 import { rangeStats, type Stats } from '../analysis/stats'
 import { bestLap, findSpeed, formatLapTime, type Lap, type SpeedUnit } from '../analysis/track'
 import { channelTitle, type Channel, type Session } from '../data/session'
-import type { ViewSync } from '../plot/sync'
+import { watchRange, type ViewSync } from '../plot/sync'
 import { setSplits, updateTrack, useSplits, useTrack, type LapMode } from '../state/analysis'
 
 const MODE_HELP: Record<LapMode, string> = {
@@ -492,42 +492,46 @@ function LapsTab({
   )
 }
 
+const STATS_SETTLE_MS = 150
+
 const fmt = (v: number, p: number) => (Number.isFinite(v) ? v.toFixed(p) : '–')
 
 function StatsTab({ view, sync, plotted }: Props) {
   const [rows, setRows] = useState<{ key: string; ch: Channel; slot: string; st: Stats }[]>([])
   const rangeRef = useRef<HTMLSpanElement>(null)
 
-  useEffect(() => {
-    let queued = 0
-    const compute = () => {
-      queued = 0
-      const r = sync.range()
-      const sets = view.visible(r)
-      if (rangeRef.current) {
-        const [a, b] = r ? [r.min, r.max] : view.bounds
-        rangeRef.current.textContent = `${view.formatX(a)} → ${view.formatX(b)}`
-      }
-      setRows(
-        plotted.flatMap((ch) =>
-          sets.map((s) => ({
-            key: `${ch.id}@${s.slot}`,
-            ch,
-            slot: view.slots[s.slot]?.label ?? '',
-            st: rangeStats(ch.data, s.start, s.end),
-          })),
-        ),
-      )
-    }
-    queued = requestAnimationFrame(compute)
-    const off = sync.onRange(() => {
-      if (!queued) queued = requestAnimationFrame(compute)
-    })
-    return () => {
-      off()
-      if (queued) cancelAnimationFrame(queued)
-    }
-  }, [view, sync, plotted])
+  useEffect(
+    () =>
+      watchRange(
+        sync,
+        {
+          // The range label is cheap, so it follows the zoom every frame.
+          frame: () => {
+            if (!rangeRef.current) return
+            const r = sync.range()
+            const [a, b] = r ? [r.min, r.max] : view.bounds
+            rangeRef.current.textContent = `${view.formatX(a)} → ${view.formatX(b)}`
+          },
+          // The statistics scan every sample in view for every channel, so
+          // they wait until the range stops changing.
+          settled: () => {
+            const sets = view.visible(sync.range())
+            setRows(
+              plotted.flatMap((ch) =>
+                sets.map((s) => ({
+                  key: `${ch.id}@${s.slot}`,
+                  ch,
+                  slot: view.slots[s.slot]?.label ?? '',
+                  st: rangeStats(ch.data, s.start, s.end),
+                })),
+              ),
+            )
+          },
+        },
+        STATS_SETTLE_MS,
+      ),
+    [view, sync, plotted],
+  )
 
   return (
     <div className="space-y-2 p-3 text-xs">

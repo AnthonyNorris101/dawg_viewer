@@ -104,3 +104,35 @@ export function createViewSync(cursorKey: string): ViewSync {
     },
   }
 }
+
+// Follows a ViewSync's range for work of two costs: `frame` runs at most once
+// per animation frame while the range moves, `settled` once the range has
+// held still for `settleMs`. Both run once at the start. Returns a stop
+// function that cancels anything pending.
+export function watchRange(
+  sync: ViewSync,
+  { frame, settled }: { frame: () => void; settled: () => void },
+  settleMs: number,
+): () => void {
+  let queued = 0
+  let timer: ReturnType<typeof setTimeout> | undefined
+  queued = requestAnimationFrame(() => {
+    queued = 0
+    frame()
+    settled()
+  })
+  const off = sync.onRange(() => {
+    if (!queued)
+      queued = requestAnimationFrame(() => {
+        queued = 0
+        frame()
+      })
+    clearTimeout(timer)
+    timer = setTimeout(settled, settleMs)
+  })
+  return () => {
+    off()
+    if (queued) cancelAnimationFrame(queued)
+    clearTimeout(timer)
+  }
+}

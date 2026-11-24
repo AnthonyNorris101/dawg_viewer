@@ -321,8 +321,10 @@ bucket, instead of one stroke per segment, so a whole outing redraws quickly.
   cursor is the last position the pointer was over a plot, since moving to
   the button leaves the plot.
 - Stats: min, average and max over the part in view for every channel on the
-  worksheet's time plots (per lap when overlaying), recomputed once per
-  animation frame while zooming.
+  worksheet's time plots (per lap when overlaying). The range label follows
+  the zoom every frame; the figures are recomputed once the range has held
+  still for 150 ms, since they scan every sample in view (`watchRange` in
+  plot/sync.ts).
 - Values: every channel at the cursor, written to the DOM directly.
 
 ### Settings storage (state/storage.ts)

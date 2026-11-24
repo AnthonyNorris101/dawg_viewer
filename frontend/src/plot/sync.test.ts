@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type uPlot from 'uplot'
-import { createViewSync } from './sync'
+import { createViewSync, watchRange } from './sync'
 
 describe('pinned plot cursor', () => {
   it('replaces the pin and keeps hover from changing linked readouts', () => {
@@ -39,5 +39,58 @@ describe('pinned plot cursor', () => {
     sync.refreshPin()
     expect(sync.pinnedX()).toBeNull()
     expect(cursor).toHaveBeenLastCalledWith(null)
+  })
+})
+
+describe('watchRange', () => {
+  it('runs both callbacks once at start, then the cheap one per frame and the costly one after the range settles', () => {
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame'],
+    })
+    try {
+      const sync = createViewSync('test')
+      const frame = vi.fn()
+      const settled = vi.fn()
+      const stop = watchRange(sync, { frame, settled }, 150)
+
+      vi.advanceTimersToNextFrame()
+      expect(frame).toHaveBeenCalledTimes(1)
+      expect(settled).toHaveBeenCalledTimes(1)
+
+      // A zoom gesture: ten range changes, 20 ms apart.
+      for (let i = 0; i < 10; i++) {
+        sync.setRange({ min: i, max: 100 })
+        vi.advanceTimersByTime(20)
+      }
+      expect(frame.mock.calls.length).toBeGreaterThan(1)
+      expect(settled).toHaveBeenCalledTimes(1)
+
+      vi.advanceTimersByTime(150)
+      expect(settled).toHaveBeenCalledTimes(2)
+
+      stop()
+      sync.setRange({ min: 50, max: 60 })
+      vi.advanceTimersByTime(1000)
+      expect(settled).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('cancels pending work when stopped before the first frame', () => {
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame'],
+    })
+    try {
+      const sync = createViewSync('test')
+      const frame = vi.fn()
+      const settled = vi.fn()
+      watchRange(sync, { frame, settled }, 150)()
+      vi.advanceTimersByTime(1000)
+      expect(frame).not.toHaveBeenCalled()
+      expect(settled).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
