@@ -2,10 +2,13 @@ package live
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"net/netip"
+	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,6 +16,7 @@ import (
 	"dawg_viewer/internal/config"
 	"dawg_viewer/internal/itv"
 	"dawg_viewer/internal/link"
+	"dawg_viewer/internal/logfile"
 )
 
 const (
@@ -23,6 +27,14 @@ const (
 type Row struct {
 	T float64            `json:"t"`
 	V map[string]float64 `json:"v"`
+
+	raw []rawValue // uncalibrated device values for the backup log; cleared before the row is sent
+}
+
+type rawValue struct {
+	id   uint8
+	name string
+	v    float32
 }
 
 type Frame struct {
@@ -59,6 +71,8 @@ type Status struct {
 	Timing   string `json:"timing"`
 	LateRows uint64 `json:"lateRows"`
 
+	Recording string `json:"recording"` // backup log being written, empty when off
+
 	StartedAt int64 `json:"startedAt"`
 }
 
@@ -78,6 +92,9 @@ type Options struct {
 	ConfigDir  string
 	FrameRate  int
 	StaleAfter time.Duration
+	// RecordDir, when set, is where the session writes a backup log of every
+	// value it receives. Empty turns the backup off.
+	RecordDir string
 }
 
 type Session struct {
@@ -92,6 +109,7 @@ type Session struct {
 	channels []Channel
 
 	calibrations chan map[string]config.Calibration
+	recordDir    chan string
 }
 
 func Start(parent context.Context, opts Options, sink Sink) (*Session, error) {
@@ -116,6 +134,7 @@ func Start(parent context.Context, opts Options, sink Sink) (*Session, error) {
 		listener:     lst,
 		done:         make(chan struct{}),
 		calibrations: make(chan map[string]config.Calibration, 1),
+		recordDir:    make(chan string, 1),
 	}
 	h := newHub(opts, s)
 	h.status.Listen = lst.Addr().String()
@@ -141,6 +160,15 @@ func (s *Session) Stop() {
 func (s *Session) SetCalibrations(c map[string]config.Calibration) {
 	select {
 	case s.calibrations <- c:
+	case <-s.done:
+	}
+}
+
+// SetRecordDir turns the backup log on (a folder) or off (""). Turning it on
+// starts a new file at the next data row.
+func (s *Session) SetRecordDir(dir string) {
+	select {
+	case s.recordDir <- dir:
 	case <-s.done:
 	}
 }
@@ -218,6 +246,10 @@ type hub struct {
 	discovered  map[netip.Addr]bool
 	ignored     map[netip.Addr]uint64
 	status      Status
+
+	rec       *logfile.Recorder
+	recFailed bool
+	recBase   float64 // row time of the backup's first sample; its timestamps count from here
 }
 
 func newHub(opts Options, s *Session) *hub {
@@ -306,6 +338,7 @@ func (h *hub) run(ctx context.Context, packets <-chan link.Packet, lst *link.Lis
 		select {
 		case <-ctx.Done():
 			h.flush(true)
+			h.closeRecording()
 			h.saveNames()
 			h.status.State = "stopped"
 			h.publishStatus(time.Now())
@@ -330,6 +363,9 @@ func (h *hub) run(ctx context.Context, packets <-chan link.Packet, lst *link.Lis
 			if errs := h.setCalibrations(c); len(errs) > 0 {
 				h.status.Error = errs[0]
 			}
+		case dir := <-h.session.recordDir:
+			h.setRecordDir(dir)
+			h.publishStatus(time.Now())
 		case err := <-h.nameReqErr:
 			h.nameReqRun = false
 			if err != nil {
@@ -338,6 +374,7 @@ func (h *hub) run(ctx context.Context, packets <-chan link.Packet, lst *link.Lis
 		case <-frameT.C:
 			h.flush(false)
 		case now := <-statusT.C:
+			h.flushRecording()
 			h.publishStatus(now)
 		case <-saveT.C:
 			h.saveNames()
@@ -394,6 +431,9 @@ func (h *hub) handle(ctx context.Context, p link.Packet) {
 			continue
 		}
 		row.V[name] = v
+		if h.opts.RecordDir != "" {
+			row.raw = append(row.raw, rawValue{f.ID, name, float32(f.Num)})
+		}
 	}
 	if needNames {
 		h.requestNames(ctx, p.At)
@@ -533,6 +573,7 @@ func (h *hub) flush(all bool) {
 		}
 		h.lastOut = out[i].T
 	}
+	h.record(out)
 	h.session.sink.Frame(Frame{Rows: out})
 	h.pending = append([]Row(nil), h.pending[n:]...)
 	h.pendingTx = append([]float64(nil), h.pendingTx[n:]...)
@@ -559,6 +600,10 @@ func (h *hub) publishStatus(now time.Time) {
 	}
 	if h.device.IsValid() {
 		st.DeviceIP, st.DeviceSource = h.device.String(), h.deviceSource
+	}
+	st.Recording = ""
+	if h.rec != nil {
+		st.Recording = h.rec.Path()
 	}
 	st.UnknownIDs = st.UnknownIDs[:0]
 	for id := range h.unknown {
@@ -589,4 +634,97 @@ func (h *hub) saveNames() {
 	if err := config.SaveNames(h.opts.ConfigDir, h.opts.Profile.ID, h.names); err == nil {
 		h.namesDirty = false
 	}
+}
+
+// record appends rows to the backup log, opening it on the first row. Times
+// are the rows' final times, as ms after the first recorded row (rows leave
+// flush in increasing time order), so the backup matches what the Live tab
+// plotted, across device restarts too.
+func (h *hub) record(rows []Row) {
+	if h.opts.RecordDir == "" || h.recFailed {
+		for i := range rows {
+			rows[i].raw = nil
+		}
+		return
+	}
+	if h.rec == nil {
+		rec, err := openRecording(h.opts.RecordDir, h.opts.Profile.ID, time.Now())
+		if err != nil {
+			h.recordingFailed(err)
+			h.record(rows)
+			return
+		}
+		h.rec, h.recBase = rec, rows[0].T
+	}
+	for i := range rows {
+		ts := uint32(math.Round(math.Max(0, rows[i].T-h.recBase) * 1000))
+		for _, r := range rows[i].raw {
+			if err := h.rec.Write(logfile.LogEntry{TimeStampMS: ts, ID: r.id, Value: r.v}, r.name); err != nil {
+				h.recordingFailed(err)
+				h.record(rows[i:])
+				return
+			}
+		}
+		rows[i].raw = nil
+	}
+}
+
+func (h *hub) setRecordDir(dir string) {
+	if dir == h.opts.RecordDir && !h.recFailed {
+		return
+	}
+	h.closeRecording()
+	h.opts.RecordDir, h.recFailed = dir, false
+}
+
+func (h *hub) flushRecording() {
+	if h.rec != nil {
+		if err := h.rec.Flush(); err != nil {
+			h.recordingFailed(err)
+		}
+	}
+}
+
+func (h *hub) closeRecording() {
+	if h.rec != nil {
+		if err := h.rec.Close(); err != nil {
+			h.status.Error = "backup log: " + err.Error()
+		}
+		h.rec = nil
+	}
+}
+
+// recordingFailed stops the backup for the rest of the session; live data keeps flowing.
+func (h *hub) recordingFailed(err error) {
+	h.status.Error = "backup log stopped: " + err.Error()
+	h.recFailed = true
+	if h.rec != nil {
+		h.rec.Close()
+		h.rec = nil
+	}
+}
+
+// openRecording creates <start UTC>_live_<profile>.csv in dir, adding -2, -3, …
+// if a recording that started in the same second already used the name.
+func openRecording(dir, profile string, start time.Time) (*logfile.Recorder, error) {
+	base := start.UTC().Format("2006-01-02_15-04-05") + "_live_" + fileSafe(profile)
+	for n := 1; ; n++ {
+		name := base + ".csv"
+		if n > 1 {
+			name = fmt.Sprintf("%s-%d.csv", base, n)
+		}
+		rec, err := logfile.CreateRecording(dir, name)
+		if !errors.Is(err, os.ErrExist) || n == 100 {
+			return rec, err
+		}
+	}
+}
+
+func fileSafe(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '-' || r == '_' || r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' {
+			return r
+		}
+		return '_'
+	}, s)
 }

@@ -80,8 +80,10 @@ profile's device, decode it, ignore commands, learn names, build the row. It
 also emits a frame every 1/frame_rate s, a status every 0.5 s, and saves the
 name cache every 2 s if it changed.
 
-The live backend keeps **no telemetry history**: only the latest value per channel (needed
-to rebuild the GPS values), the name table and rows not yet sent. Its memory
+The live backend keeps **no telemetry history** in memory: only the latest value per channel (needed
+to rebuild the GPS values), the name table and rows not yet sent. With
+`live_backup` on, the hub also appends each row it sends to a backup log on
+disk (see [backend.md](backend.md#internallive)). Its memory
 stays bounded by the live pipeline. Separately, opening a log retains a loaded
 table in `internal/logdata` until its one-time URL is fetched.
 

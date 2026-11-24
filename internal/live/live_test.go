@@ -5,12 +5,16 @@ import (
 	"math"
 	"net"
 	"net/netip"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"dawg_viewer/internal/config"
 	"dawg_viewer/internal/itv"
+	"dawg_viewer/internal/logfile"
 )
 
 type recorder struct {
@@ -241,5 +245,164 @@ func TestDiscoveredAddressesAcceptTelemetryFromEitherInterface(t *testing.T) {
 	}
 	if h.accepts(netip.MustParseAddr("172.20.16.1")) {
 		t.Fatal("an address without matching discovery should be rejected")
+	}
+}
+
+func TestSessionWritesBackupLog(t *testing.T) {
+	dir := t.TempDir()
+	p := config.Profile{
+		ID:        "backup/test",
+		Telemetry: config.Telemetry{Listen: "127.0.0.1:0"},
+		Calibrations: map[string]config.Calibration{
+			"Brake": {Type: "linear", Mult: 2000, Div: 3276, Add: -250},
+		},
+	}
+	rec := &recorder{}
+	s, err := Start(context.Background(), Options{Profile: p, ConfigDir: t.TempDir(), FrameRate: 50, RecordDir: dir}, rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dst, _ := net.ResolveUDPAddr("udp4", s.Status().Listen)
+	conn, err := net.DialUDP("udp4", nil, dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	var names []byte
+	names = itv.AppendName(names, 0, "Time_tx")
+	names = itv.AppendName(names, 11, "RPM")
+	names = itv.AppendName(names, 28, "Brake")
+	conn.Write(names)
+	conn.Write(itv.AppendF32(itv.AppendF32(itv.AppendF32(nil, 11, 6500), 28, 3276), 0, 1000))
+	conn.Write(itv.AppendF32(itv.AppendF32(nil, 11, 6600), 0, 1100))
+	rows := rec.waitRows(t, 2)
+	s.Stop()
+
+	if rows[0].raw != nil {
+		t.Error("raw values were sent to the frontend")
+	}
+	matches, _ := filepath.Glob(filepath.Join(dir, "*_live_backup_test.csv"))
+	if len(matches) != 1 {
+		entries, _ := os.ReadDir(dir)
+		t.Fatalf("backup files = %v, dir has %v", matches, entries)
+	}
+	b, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(b)
+	if !strings.HasPrefix(text, "timestamp_ms,id,signal,value\n") || !strings.Contains(text, ",28,Brake,3276\n") {
+		t.Fatalf("backup should hold raw values in the long CSV format:\n%s", text)
+	}
+
+	tab, source, err := logfile.Load(matches[0], logfile.Options{
+		Hz:        100,
+		Calibrate: map[string]func(float64) float64{"Brake": func(v float64) float64 { return v*2000/3276 - 250 }},
+	})
+	if err != nil || source != logfile.SourceLong {
+		t.Fatalf("loading the backup: %v (source %q)", err, source)
+	}
+	if tab.TimeMS[len(tab.TimeMS)-1]-tab.TimeMS[0] < 90 {
+		t.Errorf("backup spans %v ms, want about 100", tab.TimeMS[len(tab.TimeMS)-1]-tab.TimeMS[0])
+	}
+	for c, name := range tab.Columns {
+		if name == "Brake" && math.Abs(tab.Values[c][0]-1750) > 1e-3 {
+			t.Errorf("Brake after loading = %v, want 1750", tab.Values[c][0])
+		}
+	}
+}
+
+func TestNoBackupWithoutRecordDir(t *testing.T) {
+	h := newHub(Options{Profile: config.Profile{ID: "x"}}, &Session{})
+	rows := []Row{{T: 1, raw: []rawValue{{11, "RPM", 1}}}}
+	h.record(rows)
+	if h.rec != nil || rows[0].raw != nil {
+		t.Fatal("recorded without a RecordDir, or kept raw values")
+	}
+}
+
+func TestBackupNamesDontCollide(t *testing.T) {
+	dir := t.TempDir()
+	start := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
+	var paths []string
+	for i := 0; i < 2; i++ {
+		r, err := openRecording(dir, "g26-iltm", start)
+		if err != nil {
+			t.Fatal(err)
+		}
+		paths = append(paths, filepath.Base(r.Path()))
+		r.Close()
+	}
+	if paths[0] != "2026-11-21_12-00-00_live_g26-iltm.csv" || paths[1] != "2026-11-21_12-00-00_live_g26-iltm-2.csv" {
+		t.Fatalf("names = %v", paths)
+	}
+}
+
+func TestBackupCanBeToggledWhileConnected(t *testing.T) {
+	dir := t.TempDir()
+	p := config.Profile{ID: "toggle", Telemetry: config.Telemetry{Listen: "127.0.0.1:0"}}
+	rec := &recorder{}
+	s, err := Start(context.Background(), Options{Profile: p, ConfigDir: t.TempDir(), FrameRate: 50}, rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Stop()
+	dst, _ := net.ResolveUDPAddr("udp4", s.Status().Listen)
+	conn, err := net.DialUDP("udp4", nil, dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	sent := 0
+	send := func() {
+		t.Helper()
+		conn.Write(itv.AppendF32(itv.AppendName(nil, 11, "RPM"), 11, 6500))
+		sent++
+		rec.waitRows(t, sent)
+	}
+	files := func() []string {
+		m, _ := filepath.Glob(filepath.Join(dir, "*_live_toggle*.csv"))
+		return m
+	}
+	rpmRows := func() int {
+		got := files()
+		if len(got) != 1 {
+			t.Fatalf("backup files = %v, want 1", got)
+		}
+		b, _ := os.ReadFile(got[0])
+		return strings.Count(string(b), ",11,RPM,6500\n")
+	}
+
+	send()
+	if len(files()) != 0 || s.Status().Recording != "" {
+		t.Fatal("recorded while the backup was off")
+	}
+
+	s.SetRecordDir(dir)
+	deadline := time.Now().Add(2 * time.Second)
+	for s.Status().Recording == "" {
+		if time.Now().After(deadline) {
+			t.Fatal("backup didn't start after SetRecordDir")
+		}
+		send()
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	s.SetRecordDir("")
+	for s.Status().Recording != "" {
+		if time.Now().After(deadline) {
+			t.Fatal("backup didn't stop after SetRecordDir(\"\")")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	before := rpmRows()
+	if before == 0 {
+		t.Fatal("nothing was recorded while the backup was on")
+	}
+	send()
+	send()
+	if after := rpmRows(); after != before {
+		t.Fatalf("backup grew from %d to %d rows after it was turned off", before, after)
 	}
 }

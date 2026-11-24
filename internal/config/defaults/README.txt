@@ -7,8 +7,8 @@ devices/        One YAML file per device the app can read data from. Copy a
 cache/          Written by the app: the last known signal names for each
                 device, and which built-in device profiles you've been given.
                 Safe to delete; built-in profiles you removed come back once.
-logs/           Downloaded and converted logs (unless settings.yaml says
-                otherwise).
+logs/           Downloaded and converted logs, and backups of live sessions
+                (unless settings.yaml says otherwise).
 
 All files are plain text and can be edited with any editor. Restart the app,
 or use "Reload" in the live view, to pick up changes.

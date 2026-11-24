@@ -167,7 +167,11 @@ type Settings struct {
 	StaleAfterS    float64 `yaml:"stale_after_s" json:"staleAfterS"`
 	LogsDir        string  `yaml:"logs_dir" json:"logsDir"`
 	CSVRateHz      int     `yaml:"csv_rate_hz" json:"csvRateHz"`
+	LiveBackup     *bool   `yaml:"live_backup" json:"liveBackup"`
 }
+
+// BackupLive reports whether live sessions write a backup log (on unless set to false).
+func (s Settings) BackupLive() bool { return s.LiveBackup == nil || *s.LiveBackup }
 
 func (s *Settings) applyDefaults() {
 	if s.FrameRate <= 0 {
@@ -201,27 +205,43 @@ func LoadSettings(dir string) (Settings, error) {
 }
 
 func SaveDevice(dir, id string) error {
+	return saveSetting(dir, "device", id, true)
+}
+
+func SaveLiveBackup(dir string, on bool) error {
+	return saveSetting(dir, "live_backup", on, false)
+}
+
+// saveSetting rewrites only the key's line in settings.yaml so comments and
+// layout stay as they are. A missing key is added at the top or the end.
+func saveSetting(dir, key string, v any, atTop bool) error {
 	p := filepath.Join(dir, "settings.yaml")
 	b, err := os.ReadFile(p)
 	if err != nil {
 		return err
 	}
-	value, err := yaml.Marshal(id)
+	value, err := yaml.Marshal(v)
 	if err != nil {
 		return err
 	}
-	line := "device: " + strings.TrimSpace(string(value))
+	line := key + ": " + strings.TrimSpace(string(value))
 	lines := strings.Split(string(b), "\n")
 	replaced := false
 	for i, l := range lines {
-		if strings.HasPrefix(l, "device:") {
+		if strings.HasPrefix(l, key+":") {
 			lines[i] = line
 			replaced = true
 			break
 		}
 	}
-	if !replaced {
+	switch {
+	case replaced:
+	case atTop:
 		lines = append([]string{line}, lines...)
+	case len(lines) > 0 && lines[len(lines)-1] == "":
+		lines = append(lines[:len(lines)-1], line, "")
+	default:
+		lines = append(lines, line)
 	}
 	tmp := p + ".tmp"
 	if err := os.WriteFile(tmp, []byte(strings.Join(lines, "\n")), 0o644); err != nil {

@@ -42,6 +42,7 @@ changes to a built-in profile you already have don't reach your copy.
 | `stale_after_s` | 2 | seconds without data before the status says "No new data" |
 | `logs_dir` | `logs` | where downloaded logs go (relative to the config folder) |
 | `csv_rate_hz` | 100 | samples per second of `_Normalized.csv` and of `.bin`/long-CSV logs opened in the Viewer (1–1000) |
+| `live_backup` | `true` | while connected, also save every received value to `<date>_<time>_live_<device>.csv` (when recording started, UTC) in `logs_dir`; `false` turns it off. The **Backup log** checkbox in the Live tab changes this line. |
 
 When the app saves `device`, it rewrites only that line so your comments and
 layout stay as they are.

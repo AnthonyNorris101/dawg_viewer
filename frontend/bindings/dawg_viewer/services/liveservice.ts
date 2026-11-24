@@ -64,6 +64,14 @@ export function SavePreset(name: string, data: string): $CancellablePromise<$mod
     return $Call.ByID(3629192645, name, data);
 }
 
+/**
+ * SetLiveBackup turns the live backup log on or off, saves the choice to
+ * settings.yaml and applies it to the running session without reconnecting.
+ */
+export function SetLiveBackup(on: boolean): $CancellablePromise<$models.Info> {
+    return $Call.ByID(1566675481, on);
+}
+
 export function Status(): $CancellablePromise<live$0.Status> {
     return $Call.ByID(4184843501);
 }
