@@ -73,8 +73,22 @@ jobs:
       - name: Install NSIS
         if: runner.os == 'Windows'
         run: |
-          choco install nsis -y --no-progress
-          echo "C:/Program Files (x86)/NSIS" >> "$GITHUB_PATH"
+          nsis_dir="C:/Program Files (x86)/NSIS"
+          for attempt in 1 2 3; do
+            if ! choco install nsis -y --no-progress; then
+              echo "Chocolatey NSIS install attempt $attempt failed." >&2
+            fi
+            if [[ -f "$nsis_dir/makensis.exe" ]]; then
+              echo "$nsis_dir" >> "$GITHUB_PATH"
+              exit 0
+            fi
+            if [[ "$attempt" -lt 3 ]]; then
+              echo "NSIS installation unavailable; retrying ($attempt/3)..." >&2
+              sleep $((attempt * 10))
+            fi
+          done
+          echo "NSIS installation failed: makensis.exe not found in $nsis_dir" >&2
+          exit 1
 
       - name: Build Windows app and installer
         if: runner.os == 'Windows'
