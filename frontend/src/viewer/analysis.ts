@@ -1,3 +1,4 @@
+import { originOf, withOrigin, type Origin } from '../data/origin'
 import { fusePosition, type Fusion } from '../analysis/fusion'
 import { computeAll, type MathDef } from '../analysis/math'
 import {
@@ -60,8 +61,17 @@ function makeChannel(
   precision: number,
   data: Float64Array,
   color: string,
+  origin?: Origin,
 ): Channel {
-  return { id, name: id, group, unit, precision, data, color }
+  const c: Channel = { id, name: id, group, unit, precision, data, color, origin }
+  return { ...c, label: withOrigin(id, originOf(c)) }
+}
+
+function labelled(c: Channel, custom: string | undefined) {
+  const origin = originOf(c)
+  if (origin === 'measured' && !c.hint) return custom || undefined
+  const title = custom || c.name
+  return withOrigin(c.hint ? `${title} (${c.hint})` : title, origin)
 }
 
 export function withMeta(
@@ -72,7 +82,7 @@ export function withMeta(
     const m = metas?.[c.name]
     return {
       ...c,
-      label: m?.label || undefined,
+      label: labelled(c, m?.label),
       color: m?.color || c.color,
       unit: m?.unit || c.unit,
       precision: m?.precision ?? c.precision,
@@ -156,13 +166,14 @@ export function derivedChannels(base: Session, distance: Float64Array | null, la
   let color = base.channels.length
   const next = () => CHANNEL_COLORS[color++ % CHANNEL_COLORS.length]
   const out: Channel[] = []
-  if (distance) out.push(makeChannel('Distance', 'Analysis', 'm', 1, distance, next()))
+  const origin = base.simulated ? 'theory' : undefined
+  if (distance) out.push(makeChannel('Distance', 'Analysis', 'm', 1, distance, next(), origin))
   if (laps.length > 0) {
     const cols = lapColumns(base.time, distance, laps)
-    out.push(makeChannel('Lap Number', 'Analysis', '', 0, cols.lapNo, next()))
-    out.push(makeChannel('Lap Time', 'Analysis', 's', 2, cols.lapTime, next()))
+    out.push(makeChannel('Lap Number', 'Analysis', '', 0, cols.lapNo, next(), origin))
+    out.push(makeChannel('Lap Time', 'Analysis', 's', 2, cols.lapTime, next(), origin))
     if (cols.lapDist)
-      out.push(makeChannel('Lap Distance', 'Analysis', 'm', 1, cols.lapDist, next()))
+      out.push(makeChannel('Lap Distance', 'Analysis', 'm', 1, cols.lapDist, next(), origin))
   }
   return out.filter((c) => !base.byId.has(c.id))
 }
@@ -183,6 +194,7 @@ export function mathChannels(base: Session, extra: Channel[], defs: MathDef[]) {
     channels.push({
       id: r.name,
       name: r.name,
+      label: withOrigin(r.name, originOf({ id: r.name, group: 'Math' }, d.expr)),
       group: 'Math',
       unit: d.unit,
       precision: d.precision,

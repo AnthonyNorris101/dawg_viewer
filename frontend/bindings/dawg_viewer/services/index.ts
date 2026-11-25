@@ -16,6 +16,9 @@ export type {
     Preset,
     ProfileSummary,
     RemoteLog,
+    SavedTrack,
+    Stock,
+    TrackSearch,
     ViewerChannel,
     ViewerLog
 } from "./models.js";

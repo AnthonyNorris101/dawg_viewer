@@ -1,0 +1,52 @@
+# G26 car values that come with Dawg Viewer.
+# A device profile with no car values of its own uses these, and the Car tab
+# says so. Saving on the Car tab writes them into the profile, where they can
+# be changed.
+#
+# None of these was measured on the car by the app. Where each came from:
+#   G26 spec sheet (SharePoint): wheelbase, track widths, CG height, roll
+#     centres, final drive, motion ratios (1.69 / 1.70).
+#   mass 277 kg: 209 kg car from the spec sheet + 68 kg driver (assumed).
+#   rear_weight 0.53: middle of the sheet's 46-48 % front.
+#   spring rates: worked back from the sheet's wheel rates (20 / 23 N/mm) and
+#     motion ratios. The real spring rates were not found.
+#   unsprung 11.25 kg a corner: 277 kg minus the briefing's 232 kg sprung
+#     mass, split evenly (assumed).
+#   torque: "G26 Dyno Data" sheet, run 19 of 8/8/26, measured at the wheels and
+#     reduced to one point every 500 rpm; drive_eff is 1 for that reason.
+#   cla / cda: from the sheet's Cl 0.40 (lift), Cd 0.77 and 0.9 m2 area.
+#   tire: lateral Magic Formula coefficients from the team tire model
+#     (UGAMS_TireModel.m / 43075.7.C.tir). tire_rate 84 N/mm is from the .tir;
+#     the briefing says 106 N/mm at 14 psi hot.
+#   tire_radius 0.200 m: matches Run-1's rpm against GPS speed.
+#   redline 13000 and shift_time 0.06 s: from the team.
+# Anything not listed here (gear ratios, primary, tire grip for drive and
+# brake...) is left out, so the app uses its typical value and tags it.
+
+car:
+  mass: 277
+  wheelbase: 1.53
+  cg_height: 0.3
+  rear_weight: 0.53
+  tire_radius: 0.2
+  final_drive: 3.27
+  redline: 13000
+  cla: -0.36
+  cda: 0.693
+  air_density: 1.162
+  drive_eff: 1
+  shift_time: 0.06
+  tire_mu_lat: 1.5197424
+  track_front: 1.21
+  track_rear: 1.16
+  spring_front: 57.12
+  spring_rear: 66.47
+  motion_front: 0.5917
+  motion_rear: 0.5882
+  rc_front: 0.1065
+  rc_rear: 0.1256
+  unsprung_front: 11.25
+  unsprung_rear: 11.25
+  tire_rate: 84
+  torque: [[3500, 12.7], [4000, 15], [4500, 13], [5000, 18], [5500, 23.2], [6000, 30.1], [6500, 25], [7000, 27.2], [7500, 31.8], [8000, 35], [8500, 42.5], [9000, 45.4], [9500, 47.7], [10000, 42.5], [10500, 36.6], [11000, 34.5], [11500, 28.8], [12000, 22.6], [12500, 16.8]]
+  tire: {fnomin: 1110, nompres: 96526.64, pcy1: 1.47938, pdy1: 1.5197424, pdy2: -0.11980122, pey1: 0.258174, pey2: 0.134876, pky1: 33.3683, pky2: 3.92018, pky4: 5.07208, ppy1: 0.290986, ppy2: 0.971999, ppy3: -0.185848, ppy4: 0.19433}

@@ -22,7 +22,7 @@ export interface FilterStart {
   edit?: { id: string; name: string; spec: FilterSpec }
 }
 
-const NOT_SENSORS = new Set(['Math', 'Analysis'])
+const NOT_SENSORS = new Set(['Math', 'Analysis', 'Sim'])
 
 const field =
   'rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-100 outline-none focus:border-red-500'

@@ -4,6 +4,9 @@
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as config$0 from "../internal/config/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as maptiles$0 from "../internal/maptiles/models.js";
 
 export interface ChannelSettings {
     "name": string;
@@ -21,7 +24,10 @@ export interface Info {
     "channels": { [_ in string]?: config$0.ChannelMeta } | null;
     "calibrations": { [_ in string]?: config$0.Calibration } | null;
     "car": config$0.Car;
+    "stockCar": config$0.Car;
     "settingsError": string;
+    "mapSources": maptiles$0.Source[] | null;
+    "trackSearch": TrackSearch;
 }
 
 export interface LocalLog {
@@ -58,6 +64,21 @@ export interface RemoteLog {
     "number": number;
     "date": string;
     "downloaded": boolean;
+}
+
+export interface SavedTrack {
+    "name": string;
+    "modified": number;
+}
+
+export interface Stock {
+    "setup": string;
+    "sampleLog": string;
+}
+
+export interface TrackSearch {
+    "online": boolean;
+    "byName": boolean;
 }
 
 export interface ViewerChannel {

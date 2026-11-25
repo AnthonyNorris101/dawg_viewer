@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { LiveService } from '../bindings/dawg_viewer/services'
 import { SetupsDialog } from './components/SetupsDialog'
 import type { Session } from './data/session'
-import { askOnStart, lastLog, savedWorkbook } from './state/setup'
+import { firstBootLog, sampleLog, useActiveSetup, useSaveState } from './state/session'
+import { askOnStart, lastLog, savedWorkbook, showSimSheet } from './state/setup'
 import { setLiveShown, useInfo, useTestMode } from './live/connection'
 import { LIVE_PATH, liveSession } from './live/liveSession'
 import { startTestMode, stopTestMode, TEST_LOG_PATH, testSession } from './testmode/testMode'
@@ -11,15 +12,17 @@ import { CarView } from './views/CarView'
 import { LiveView } from './views/LiveView'
 import { LogsView } from './views/LogsView'
 import { SettingsView } from './views/SettingsView'
+import { SimView } from './views/SimView'
 import { loadLiveLayoutMode, saveLiveLayoutMode, type LiveLayoutMode } from './settings/liveLayout'
 import { ViewerView } from './views/ViewerView'
 
-type Tab = 'live' | 'logs' | 'viewer' | 'car' | 'settings'
+type Tab = 'live' | 'logs' | 'viewer' | 'sim' | 'car' | 'settings'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'live', label: 'Live' },
   { id: 'logs', label: 'Logs' },
   { id: 'viewer', label: 'Viewer' },
+  { id: 'sim', label: 'Sim' },
   { id: 'car', label: 'Car' },
   { id: 'settings', label: 'Settings' },
 ]
@@ -32,15 +35,20 @@ function App() {
     saveLiveLayoutMode(mode)
   }
   useEffect(() => setLiveShown(tab === 'live'), [tab])
-  const version = useInfo()?.version
+  const info = useInfo()
+  const version = info?.version
+  const activeSetup = useActiveSetup()
+  const saving = useSaveState()
   const testing = useTestMode()
   const [session, setSession] = useState<Session | null>(null)
+  const [simOf, setSimOf] = useState<Session | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [setups, setSetups] = useState<'start' | 'manage' | null>(null)
   const [watching, setWatching] = useState(false)
   const [waitingLive, setWaitingLive] = useState(false)
   const openingLog = useRef(false)
+  const booted = useRef(false)
 
   useEffect(() => {
     if (!watching || tab !== 'viewer') return
@@ -54,19 +62,6 @@ function App() {
     const t = window.setInterval(tick, 1000)
     return () => window.clearInterval(t)
   }, [watching, tab])
-
-  useEffect(() => {
-    if (!askOnStart.get()) return
-    let live = true
-    LiveService.Presets()
-      .then((p) => {
-        if (live && ((p?.length ?? 0) > 0 || lastLog.get() || savedWorkbook())) setSetups('start')
-      })
-      .catch(() => {})
-    return () => {
-      live = false
-    }
-  }, [])
 
   const load = async (open: () => Promise<Session | null>) => {
     if (openingLog.current) return
@@ -89,6 +84,27 @@ function App() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    const first = firstBootLog()
+    if (first) {
+      if (!booted.current) {
+        booted.current = true
+        void load(() => openLog(first))
+      }
+      return
+    }
+    if (!askOnStart.get()) return
+    let live = true
+    LiveService.Presets()
+      .then((p) => {
+        if (live && ((p?.length ?? 0) > 0 || lastLog.get() || savedWorkbook())) setSetups('start')
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [])
 
   return (
     <div className="flex h-full max-w-full min-w-0 flex-col overflow-hidden select-none">
@@ -122,14 +138,42 @@ function App() {
           </button>
         ))}
         <span className="ml-auto flex min-w-0 flex-wrap items-center gap-3">
+          <span
+            role="status"
+            className={`max-w-56 truncate text-xs ${saving.phase === 'error' ? 'text-red-400' : 'text-zinc-500'}`}
+            title={
+              saving.phase === 'error'
+                ? `Couldn't save to the config folder: ${saving.error}. The app keeps trying.`
+                : activeSetup
+                  ? `What you change is saved into presets/${activeSetup}.json in the config folder${info?.configDir?.path ? ` (${info.configDir.path})` : ''}`
+                  : `This view has no name. It is kept in session.json in the config folder${info?.configDir?.path ? ` (${info.configDir.path})` : ''}. Name it in Setups to give it a file of its own.`
+            }
+          >
+            {activeSetup || 'Unnamed view'}
+            {saving.phase === 'error'
+              ? " · couldn't save"
+              : saving.phase === 'pending' || saving.phase === 'saving'
+                ? ' · saving…'
+                : saving.phase === 'saved'
+                  ? ' · saved'
+                  : ''}
+          </span>
           <button
             type="button"
             className="rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-400 hover:text-zinc-100"
-            title="Save the sheets, plots and made channels you have now, or switch to a saved setup"
+            title="Make a new setup or switch to a saved one. The setup in use is saved as you work."
             onClick={() => setSetups('manage')}
           >
             Setups
           </button>
+          {session && sampleLog() && session.path === sampleLog() && (
+            <span
+              className="rounded border border-sky-500/50 bg-sky-500/15 px-2 py-0.5 text-xs font-medium text-sky-200"
+              title="This log comes with the app so there is something to look at. It is real data measured on the G26 (Run-1), not a session from your car. Open your own from the Logs tab."
+            >
+              SAMPLE LOG · measured on the G26, comes with the app
+            </span>
+          )}
           {testing && (
             <span className="rounded border border-amber-500/50 bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-300">
               TEST MODE · simulated car, not real data
@@ -195,11 +239,28 @@ function App() {
                 ? testSession()
                 : session.path === LIVE_PATH
                   ? liveSession()
-                  : openLog(session.path),
+                  : session.simulated
+                    ? session
+                    : openLog(session.path),
             )
           }
         />
       </div>
+      {tab === 'sim' && (
+        <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+          <SimView
+            session={session?.simulated ? simOf : session}
+            onView={(made) => {
+              if (!session?.simulated) setSimOf(session)
+              setWatching(false)
+              setError('')
+              showSimSheet(new Set(made.channels.map((c) => c.id)))
+              setSession(made)
+              setTab('viewer')
+            }}
+          />
+        </div>
+      )}
       {tab === 'car' && (
         <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
           <CarView />
@@ -214,7 +275,10 @@ function App() {
         <SetupsDialog
           startup={setups === 'start'}
           openLog={
-            session && session.path !== TEST_LOG_PATH && session.path !== LIVE_PATH
+            session &&
+            !session.simulated &&
+            session.path !== TEST_LOG_PATH &&
+            session.path !== LIVE_PATH
               ? session.path
               : undefined
           }

@@ -1,3 +1,4 @@
+import { ORIGINS, originOf, splitOrigin } from '../data/origin'
 import {
   memo,
   useEffect,
@@ -101,7 +102,8 @@ export const ChannelList = memo(function ChannelList({
             </h2>
             {list.map((ch) => {
               const on = selected.has(ch.id)
-              const title = ch.label || ch.name
+              const { title, origin } = splitOrigin(ch.label || ch.name, originOf(ch))
+              const tag = ORIGINS[origin]
               return (
                 <div
                   key={ch.id}
@@ -126,6 +128,12 @@ export const ChannelList = memo(function ChannelList({
                       style={{ borderColor: ch.color, background: on ? ch.color : 'transparent' }}
                     />
                     <span className="min-w-0 flex-1 truncate">{title}</span>
+                    <span
+                      className={`shrink-0 rounded px-1 text-[9px] tracking-wide uppercase ${tag.className}`}
+                      title={tag.title}
+                    >
+                      {tag.tag}
+                    </span>
                     <span className="shrink-0 text-xs text-zinc-600">{ch.unit}</span>
                   </button>
                   {onDelete && deletable?.(ch.id) && (

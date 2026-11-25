@@ -65,6 +65,30 @@ names: `live:frame`, `live:status`, `live:channels`; they're registered with
 - `LocalLogs`, `ConvertLocal`, `PickFile` (native file dialog),
   `LogsFolder`, `OpenLogsFolder`.
 
+`AssetMiddleware` chains the two handlers that answer frontend `fetch`/image
+requests before the embedded assets do: the log column transfer above, then
+the map tile server (`NewMapTiles`, see [internal/maptiles](#internalmaptiles)).
+`LiveService.Info` carries the merged list of map sources (`MapSources`) so
+the frontend can offer them; a bad entry in `map_sources` is reported in
+`SettingsError`.
+
+`LiveService.SavedTracks`, `SaveTrack`, `LoadTrack` and `DeleteTrack`
+(`services/presets.go`) keep the simulator's saved tracks as
+`<config>/tracks/<name>.json`. They share one small file library with the
+setups (`presets/`): the same name cleaning, 4 MB limit, JSON check and
+write-then-rename. The backend does not look inside the files.
+
+`LiveService.LoadSession` and `SaveSession` read and write
+`<config>/session.json` through the same library. `LoadSession` returns an
+empty string when there is no file yet. The frontend owns the content (see
+[Setups](frontend.md#setups-statesetupts-statesessionts-componentssetupsdialogtsx-servicespresetsgo)).
+
+`LiveService.FindTracks(query)` and `LiveService.TracksNear(lat, lon)`
+(`services/tracks.go`) are the simulator's online track lookups, backed by
+[internal/tracks](#internaltracks). `Info.TrackSearch` tells the frontend
+whether lookups are on at all (`Online`) and whether a geocoder is set
+(`ByName`).
+
 ## internal/itv
 
 The ID-Type-Value encoding from `Firmware/ILTM_Module/ITV.h`: every field is
@@ -269,6 +293,86 @@ Names in the listing are reduced to the base name because older ESP32 cores
 return full paths. Downloads go to a `.part` file that is renamed when
 complete, and a short body is treated as an error.
 
+## internal/maptiles
+
+Fetches and keeps the imagery the track maps draw under the GPS trace. The
+webview never talks to a tile server itself: it asks the app for
+`/maptiles/<source>/<z>/<x>/<y>` and `Server.Middleware` answers from disk or
+downloads the tile once. That keeps tiles available offline, lets the app send
+one identifying `User-Agent`, and keeps third-party addresses out of the
+frontend.
+
+- `Source` is one tile server: id, menu name, URL template, deepest zoom and
+  attribution. `Defaults` returns the two built-in ones (`satellite`, USGS
+  NAIP Plus imagery through its `exportImage` endpoint, and `streets`,
+  OpenStreetMap). `Merge` adds the user's `map_sources`, replacing a built-in
+  source with the same id and collecting validation errors without dropping
+  the valid entries. The URL is not sent to the frontend (`json:"-"`).
+- `TileURL` fills `{z}`, `{x}`, `{y}` and `{bbox}`. `{bbox}` is the tile's
+  Web Mercator (EPSG:3857) extent, which is how servers without a tile scheme
+  (ArcGIS `exportImage`, WMS) are addressed.
+- A request is checked before anything is fetched: the source must exist, the
+  coordinates must be plain whole numbers inside the map and no deeper than
+  the source's `max_zoom`. Anything else is a 404, so the handler cannot be
+  used to reach other paths or hosts.
+- A tile is stored as `<dir>/<id>/<z>/<x>/<y>.tile` (temp file + rename) and
+  served from there from then on; `X-Tile-Cache` says `hit` or `miss`.
+- Downloads of the same tile are shared, at most four run at once, a response
+  must be an image of at most 4 MiB, and a failed tile is not retried for
+  60 s so an offline laptop doesn't hammer the network. Failures are never
+  written to disk.
+
+`Dir` and `Sources` are functions so the server always uses the current config
+folder and settings after a reload.
+
+Tests use an `httptest` upstream: one download then disk hits, bad requests
+never reaching the upstream, failures neither cached nor retried at once, the
+`{bbox}` arithmetic, and `Merge`.
+
+
+## internal/tracks
+
+Finds race track outlines in OpenStreetMap for the simulator. It is the only
+other place the backend reaches the internet, and only when a search button is
+pressed.
+
+- `Finder.Near` asks an Overpass server for every way tagged
+  `highway=raceway` within 3 km of a position
+  (`way["highway"="raceway"](around:3000,lat,lon);out tags geom;`).
+  `Finder.Search` first asks the configured Nominatim-style geocoder for the
+  place (`?q=…&format=jsonv2`), then runs the same Overpass query over each of
+  the first four places' bounding boxes (padded by 0.003°, or the 3 km circle
+  when the box is larger than 0.15°) and returns the first place that has
+  tracks. With no geocoder configured it returns `ErrNoGeocoder`.
+- `Config` is the `track_search` block of the settings. `Servers` returns the
+  Overpass servers in order (the built-in public pair when the key is absent;
+  an explicit empty list turns lookups off); `Validate` rejects addresses that
+  are not `http(s)`.
+- `fetch` is the one place requests are made. It answers from
+  `track-search/<hash>.json` in the config folder when that file is under 30 days
+  old, otherwise waits until 1.1 s have passed since the previous request,
+  sends the app's `User-Agent`, gives each server 15 s to answer (a whole
+  search is cut off after 40 s, so a dead connection does not leave the page
+  waiting), reads at most 8 MB and saves a valid JSON answer. A 403, 406 or 429 is returned as a refusal and that server is left
+  alone for 30 s; a failing Overpass server is skipped in favour of the next
+  one. These rules exist to
+  meet the public servers' usage policies (see
+  [configuration.md](configuration.md#track-search)); keep them when changing
+  this code.
+- `Stitch` turns the mapped pieces into whole tracks. Ways are cut wherever
+  another way starts, ends or crosses, so pieces only meet at their ends; the
+  longest unused piece is then extended at both ends, at a fork taking the
+  straightest continuation with a small preference for the same name, until
+  it closes on itself or runs out. Pit lanes (`service=pit_lane`,
+  `raceway=pit_lane` or a name containing "pit lane") are left out, tracks
+  shorter than 60 m are dropped, and the result is sorted closed loops first,
+  longest first. A closed track's points do not repeat the start.
+
+Tests use a local fake of both servers. The code has not been run against the
+public Overpass servers from the development environment, which could not
+reach them; the geocoder request and answer format were checked against the
+public Nominatim server.
+
 ## internal/config
 
 See [configuration.md](configuration.md) for the user-facing side.
@@ -332,6 +436,32 @@ replace or insert one line, and decode the result with `KnownFields` before
 writing it atomically (temp file + rename). `LiveService.SaveChannel` and
 `SaveCar` then reload the profiles and pass the new calibrations to the
 running session, which swaps its converters inside the hub goroutine.
+
+`internal/config/stock/` holds what every build comes with besides the
+default config files, embedded and never copied into the config folder as
+is: `car.yaml` (the G26 car values, `StockCar`), `setup.json` (the parts of
+the original view that differ from the frontend's defaults: the sample's
+start/finish line and the shock dyno table, `StockSetup`)
+and `run-1-sample.csv.gz`. `seed` calls `seedSample`, which unpacks the
+sample log into the logs folder once per config folder and records that in
+`cache/offered_sample.txt`; a failure there does not stop the app.
+`LiveService.Info` carries the stock car as `StockCar` next to the
+profile's own `Car`, and `LiveService.Stock` returns the stock setup and the
+sample log's path, or an empty path when the file is not there. The profile
+is not changed: the frontend decides which value to use.
+
+`ReadCarFile` (`config.ParseCar`) is the Car tab's import: it takes the text
+of a device profile, or of a file holding only car values, and returns its
+`car:` block. The block is decoded strictly, so a misspelt key is an error
+rather than a value quietly left out, and nothing is written.
+
+`SaveCar` writes every `car:` key the Car tab owns, leaving out the ones that
+are 0 so the profile stays short, and writes the torque curve as one
+`torque: [[rpm, nm], ...]` line. A curve with a non-finite number, an RPM of
+0 or less, or a negative torque is refused before the file is touched. Tire
+coefficients are written as one `tire: {name: value, ...}` line in name
+order; a name that is not a short lowercase word or a non-finite value is
+refused the same way.
 
 `ViewerLog.Source` says whether a log was a `.bin`, a long CSV (both get the
 profile's calibrations when loaded) or a wide CSV (loaded as it is). The

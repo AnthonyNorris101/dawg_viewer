@@ -4,7 +4,7 @@ This page is the technical entry point to the repository documentation. For inst
 
 ## System at a glance
 
-Dawg Viewer is a Wails desktop application. The Go backend owns device networking, configuration, log decoding, and file delivery. The React and TypeScript frontend owns live presentation, Viewer state, and numerical analysis. Wails generated bindings expose service calls; Wails events carry live frames and status.
+Dawg Viewer is a Wails desktop application. The Go backend owns device networking, configuration, log decoding, file delivery, and map imagery. The React and TypeScript frontend owns live presentation, Viewer state, numerical analysis, and the vehicle simulation. Wails generated bindings expose service calls; Wails events carry live frames and status.
 
 ```text
 logger ── UDP / discovery / TCP ──> Go services ── Wails events and calls ──> React UI
@@ -23,8 +23,11 @@ The live pipeline decodes sparse telemetry packets into named and calibrated row
 | `internal/link/`, `internal/itv/`, `internal/live/` | Network I/O, wire decoding, and live session processing |
 | `internal/config/`, `internal/calib/` | User configuration, device profiles, and calibration |
 | `internal/logfile/`, `internal/logdata/`, `internal/fileserver/` | Log conversion, column encoding, one-time transfer, and logger downloads |
+| `internal/maptiles/` | Map imagery for the track maps: download once, keep on disk, serve to the frontend |
+| `internal/tracks/` | Track outlines from OpenStreetMap for the simulator: place lookup, raceway query, stitching ways into tracks |
 | `frontend/src/live/`, `frontend/src/plot/` | Live store, refresh behavior, and plot lifecycle |
 | `frontend/src/analysis/`, `frontend/src/viewer/` | Pure analysis stages and Viewer orchestration |
+| `frontend/src/analysis/sim/`, `frontend/src/sim/` | Vehicle simulation (powertrain, grip, suspension, lap) and the Sim tab's pages |
 | `cmd/` | Logger simulator and version management tools |
 | `docs/` | User, protocol, architecture, and development references |
 
@@ -38,6 +41,7 @@ The package-level backend guide is [backend.md](backend.md); the frontend guide 
 - [Frontend](frontend.md): update model, plot lifecycle, Viewer analysis, and module ownership.
 - [Backend](backend.md): Go services and package responsibilities.
 - [Development](development.md): toolchain, simulator, tests, CI, packaging, and versioning.
+- [Dawg Viewer 0.4.0 changelog](changelog/0.4.0.md): the vehicle simulator, tracks, map backgrounds, data origin labels, and upgrade notes.
 - [Dawg Viewer 0.3.0 changelog](changelog/0.3.0.md): release highlights, reliability improvements, and upgrade notes.
 
 ## Technical constraints

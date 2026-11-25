@@ -18,11 +18,13 @@ import { WorksheetTabs } from '../components/WorksheetTabs'
 import { XYPanel } from '../components/XYPanel'
 import type { Channel, Session } from '../data/session'
 import { mathDefs, useTrack } from '../state/analysis'
-import { applySetup, currentSetup } from '../state/setup'
+import { importSetup as importSetupFile } from '../state/session'
+import { currentSetup } from '../state/setup'
 import { download, pickTextFile } from '../state/storage'
 import { defaultWorkbook } from '../state/workbook'
 import { toolbarButton, toolbarButtonActive } from '../ui'
 import { useAnalysis } from '../viewer/useAnalysis'
+import { useSimChannels } from '../viewer/useSimChannels'
 import { useViewerWorkbook } from '../viewer/useViewerWorkbook'
 import { useViewerNavigation } from '../viewer/useViewerNavigation'
 import { useRecalibration } from '../viewer/useRecalibration'
@@ -118,7 +120,7 @@ function LoadedLog({
 } & LiveProps) {
   const [notice, setNotice] = useState('')
   const { base, recalibrate } = useRecalibration(loaded, setNotice, onReload)
-  const analysis = useAnalysis(base, useInfo()?.channels ?? undefined)
+  const analysis = useSimChannels(useAnalysis(base, useInfo()?.channels ?? undefined))
   const { session, laps, gps, distance } = analysis
   const track = useTrack()
 
@@ -195,8 +197,10 @@ function LoadedLog({
     const text = await pickTextFile('.json,application/json')
     if (!text) return
     try {
-      applySetup(JSON.parse(text))
-      setNotice('Setup imported')
+      await importSetupFile(JSON.parse(text))
+      setNotice(
+        "Setup imported into the unnamed view. To keep it as a file, make a new setup from “What's open now” in Setups.",
+      )
     } catch (e) {
       setNotice(`Couldn't import: ${e instanceof Error ? e.message : String(e)}`)
     }
@@ -292,7 +296,15 @@ function LoadedLog({
             Overlay on · back to time
           </button>
         )}
-        <span className="ml-auto truncate text-xs text-zinc-500" title={session.path}>
+        <span
+          className="ml-auto truncate text-xs text-zinc-500"
+          title={session.simulated ? session.note : session.path}
+        >
+          {session.simulated && (
+            <span className="mr-1.5 rounded bg-fuchsia-500/25 px-1.5 py-0.5 font-medium text-fuchsia-200">
+              SIMULATED · not measured
+            </span>
+          )}
           {session.name}
           {session.note && <span className="text-zinc-600"> · {session.note}</span>}
         </span>
@@ -330,7 +342,7 @@ function LoadedLog({
         />
         <div className="flex min-w-0 flex-1 flex-col">
           <main
-            className="grid min-h-0 min-w-0 flex-1 auto-rows-[minmax(17rem,1fr)] grid-cols-2 gap-px overflow-y-auto bg-zinc-800"
+            className="grid min-h-0 min-w-0 flex-1 auto-rows-[minmax(4.25rem,1fr)] grid-cols-2 gap-px overflow-y-auto bg-zinc-800"
             onContextMenu={(event) => {
               const target = (event.target as HTMLElement).closest<HTMLElement>('[data-panel-id]')
               if (!target) return

@@ -37,6 +37,7 @@ const SPEED_NAMES = [
   'vehicle speed',
   'gps_speed',
   'gpsspeed',
+  'gps speed',
   'groundspeed',
   'vcar',
   'wheelspeed',

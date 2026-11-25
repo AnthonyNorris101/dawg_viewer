@@ -1,3 +1,4 @@
+import { LONG_G } from '../analysis/accel'
 import { memo, useEffect, useMemo, useRef, useState, type Dispatch } from 'react'
 import type uPlot from 'uplot'
 import {
@@ -117,7 +118,7 @@ export const LaunchPanel = memo(function LaunchPanel({
     : (s.driven ? session.byId.get(s.driven) : rearWheel) || undefined
   const gearCh = ch('GearRaw') ?? ch('Gear')
   const groundCh = s.ground ? session.byId.get(s.ground) : frontWheel
-  const accelCh = ch('AccelX')
+  const accelCh = ch(LONG_G) ?? ch('AccelX')
   const rpmCh = ch('RPM')
   const tpsCh = ch('TPS1')
 

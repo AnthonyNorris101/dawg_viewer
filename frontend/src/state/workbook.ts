@@ -1,3 +1,4 @@
+import { LAT_G, LONG_G, VERT_G } from '../analysis/accel'
 import { isPanelKind } from './panels'
 import { isObject } from './storage'
 import {
@@ -143,6 +144,29 @@ export function validWorkbook(v: unknown): v is Workbook {
   )
 }
 
+export const SIM_SHEET = 'Simulated lap'
+
+export function withSimSheet(wb: Workbook, channelNames: Set<string>): Workbook {
+  const found = wb.sheets.find((s) => s.name === SIM_SHEET)
+  if (found) return { ...wb, activeId: found.id }
+  const rows = [
+    ['Speed'],
+    ['Long G', 'Lat G'],
+    ['RPM', 'Gear'],
+    ['Throttle', 'Limit'],
+    ['Line Offset'],
+  ]
+  const panels: Omit<Panel, 'id'>[] = rows
+    .map((r) => r.filter((n) => channelNames.has(n)))
+    .filter((r) => r.length > 0)
+    .map((channelIds) => ({ kind: 'time', wide: true, channelIds }))
+  if (channelNames.has('Latitude') && channelNames.has('Speed'))
+    panels.push({ kind: 'map', wide: false, channelIds: ['Speed'] })
+  if (channelNames.has('Lat G') && channelNames.has('Long G'))
+    panels.push({ kind: 'xy', wide: false, channelIds: ['Lat G', 'Long G'] })
+  return workbookReducer(wb, { type: 'addSheet', name: SIM_SHEET, layout: makeLayout(panels) })
+}
+
 export function defaultWorkbook(channelNames: Set<string>, hasGps: boolean): Workbook {
   const has = (n: string) => channelNames.has(n)
   const pick = (...names: string[]) => names.filter(has)
@@ -177,11 +201,15 @@ export function defaultWorkbook(channelNames: Set<string>, hasGps: boolean): Wor
     {
       name: 'Driver',
       panels: nonEmpty([
-        time('VSS', 'Speed', 'GearRaw'),
+        time('VSS', 'Speed', 'GPS Speed', 'GearRaw'),
         time('TPS1', 'FBPS', 'RBPS'),
         time('StrAngle'),
-        ...(hasGps ? [other('map', pick('VSS', 'Speed').slice(0, 1))] : []),
-        ...(has('AccelX') && has('AccelY') ? [other('xy', ['AccelY', 'AccelX'])] : []),
+        ...(hasGps ? [other('map', pick('VSS', 'Speed', 'GPS Speed').slice(0, 1))] : []),
+        ...(has(LAT_G) && has(LONG_G)
+          ? [other('xy', [LAT_G, LONG_G])]
+          : has('AccelX') && has('AccelY')
+            ? [other('xy', ['AccelY', 'AccelX'])]
+            : []),
       ]),
     },
     {
@@ -196,10 +224,14 @@ export function defaultWorkbook(channelNames: Set<string>, hasGps: boolean): Wor
     {
       name: 'Chassis',
       panels: nonEmpty([
-        time('AccelX', 'AccelY'),
-        time('AccelZ'),
+        has(LAT_G) ? time(LONG_G, LAT_G) : time('AccelX', 'AccelY'),
+        has(VERT_G) ? time(VERT_G) : time('AccelZ'),
         time('Yaw'),
-        ...(has('AccelY') ? [other('histogram', ['AccelY'])] : []),
+        ...(has(LAT_G)
+          ? [other('histogram', [LAT_G])]
+          : has('AccelY')
+            ? [other('histogram', ['AccelY'])]
+            : []),
         ...(has('StrAngle') ? [other('histogram', ['StrAngle'])] : []),
       ]),
     },
@@ -210,17 +242,21 @@ export function defaultWorkbook(channelNames: Set<string>, hasGps: boolean): Wor
     {
       name: 'Launch',
       panels:
-        hasGps || pick('VSS', 'Speed').length
-          ? nonEmpty([other('launch', []), time('RPM', 'TPS1'), time('VSS', 'Speed', 'GearRaw')])
+        hasGps || pick('VSS', 'Speed', 'GPS Speed').length
+          ? nonEmpty([
+              other('launch', []),
+              time('RPM', 'TPS1'),
+              time('VSS', 'Speed', 'GPS Speed', 'GearRaw'),
+            ])
           : [],
     },
     {
       name: 'Aero',
       panels:
-        has('AccelY') && (hasGps || pick('VSS', 'Speed').length)
+        has('AccelY') && (hasGps || pick('VSS', 'Speed', 'GPS Speed').length)
           ? nonEmpty([
               other('aero', []),
-              time('VSS', 'Speed', 'AccelY'),
+              time('VSS', 'Speed', 'GPS Speed', has(LAT_G) ? LAT_G : 'AccelY'),
               time(...[...channelNames].filter((n) => SUSPENSION.test(n)).slice(0, 4)),
             ])
           : [],

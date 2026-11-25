@@ -14,6 +14,18 @@ export interface Panel {
   xyBounds?: { x?: [number, number]; y?: [number, number] }
   gMode?: 'combined' | 'lateral'
   ref?: string
+  rows?: number
+}
+
+export const PANEL_ROWS = 4
+export const TALL_PANEL_ROWS = 8
+export const MIN_PANEL_ROWS = 2
+export const MAX_PANEL_ROWS = 24
+
+export function panelRows(panel: Pick<Panel, 'rows'>, tall = false): number {
+  const rows = panel.rows
+  if (typeof rows !== 'number' || !Number.isFinite(rows)) return tall ? TALL_PANEL_ROWS : PANEL_ROWS
+  return Math.min(MAX_PANEL_ROWS, Math.max(MIN_PANEL_ROWS, Math.round(rows)))
 }
 
 export interface Layout {

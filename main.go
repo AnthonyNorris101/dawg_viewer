@@ -43,7 +43,7 @@ func main() {
 		},
 		Assets: application.AssetOptions{
 			Handler:    application.AssetFileServerFS(assets),
-			Middleware: services.LogDataMiddleware(logs),
+			Middleware: services.AssetMiddleware(logs, services.NewMapTiles(live)),
 		},
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,

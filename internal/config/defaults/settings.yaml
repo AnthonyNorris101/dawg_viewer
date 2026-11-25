@@ -26,3 +26,33 @@ csv_rate_hz: 100
 # from the Logs tab like a downloaded log. Set to false to turn it off, or use
 # the Backup log checkbox in the Live tab.
 live_backup: true
+
+# Map backgrounds for the track maps (off until someone picks one in the app).
+# Two are built in: "satellite" (USGS aerial photos, United States only) and
+# "streets" (OpenStreetMap). Imagery is downloaded the first time a place is
+# shown and kept in the maps/ folder next to this file, so it still works with
+# no internet at the track. To add another tile server (or replace a built-in
+# one by reusing its id), list it here. The url needs {z}, {x} and {y}, or
+# {bbox} for servers that take a Web Mercator bounding box:
+#
+# map_sources:
+#   - id: team-imagery
+#     name: Team imagery
+#     url: https://tiles.example.com/{z}/{x}/{y}.jpg
+#     max_zoom: 19
+#     attribution: Imagery © Example
+
+# Track outlines for the simulator (Sim tab, Lap page). Nothing is sent until
+# someone presses a search button there. "Search around the open log" asks an
+# OpenStreetMap Overpass server for the race tracks mapped near the log.
+# Searching by name also needs a geocoder and stays off until this block is
+# uncommented: the public Nominatim server has a usage policy to read and agree
+# to first (https://operations.osmfoundation.org/policies/nominatim/). See
+# docs/configuration.md, "Track search". Set "overpass: []" to turn every
+# online track lookup off.
+#
+# track_search:
+#   geocoder: https://nominatim.openstreetmap.org/search
+#   overpass:
+#     - https://overpass-api.de/api/interpreter
+#     - https://overpass.private.coffee/api/interpreter

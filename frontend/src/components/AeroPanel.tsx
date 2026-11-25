@@ -1,8 +1,8 @@
-import { memo, useEffect, useMemo, useRef, type Dispatch } from 'react'
+import { accelInG, LAT_G, LONG_G } from '../analysis/accel'
+import { memo, useEffect, useMemo, useRef, useState, type Dispatch } from 'react'
 import {
   AERO_PERCENTILE,
   fitAero,
-  G,
   gripBySpeed,
   gripLimitG,
   type AeroFit,
@@ -41,10 +41,11 @@ const TYRES = '#71717a'
 const FIT = '#f472b6'
 const MEASURED = '#fafafa'
 
-const findAccel = (channels: Channel[], axis: 'x' | 'y') =>
+const rawAccel = (channels: Channel[], axis: 'x' | 'y') =>
   channels.find((c) => new RegExp(`^acc(el)?[ _]?${axis}$`, 'i').test(c.name))
 
-const inG = (c: Channel) => (/m\/s/i.test(c.unit) ? mapColumn(c.data, (v) => v / G) : c.data)
+const cleanAccel = (channels: Channel[], axis: 'x' | 'y') =>
+  channels.find((c) => c.name === (axis === 'x' ? LONG_G : LAT_G))
 
 function Swatch({ color, dash, label }: { color: string; dash?: boolean; label: string }) {
   return (
@@ -84,9 +85,15 @@ export const AeroPanel = memo(function AeroPanel({
   const compare = refs.find((r): r is AeroReference => r.id === panel.ref && r.kind === 'aero')
   const latest = useRef<{ bins: SpeedBin[]; fit: AeroFit | null } | null>(null)
 
+  const [wantRaw, setWantRaw] = useState(false)
+  const hasClean = !!cleanAccel(session.channels, 'y')
+  const hasRaw = !!rawAccel(session.channels, 'y')
+  const raw = hasRaw && (wantRaw || !hasClean)
+
   const inputs = useMemo(() => {
-    const ax = findAccel(session.channels, 'x')
-    const ay = findAccel(session.channels, 'y')
+    const pick = raw ? rawAccel : cleanAccel
+    const ax = pick(session.channels, 'x')
+    const ay = pick(session.channels, 'y')
     const sp = findSpeed(session.channels)
     let speed: Float64Array | null = null
     let speedLabel = ''
@@ -101,14 +108,18 @@ export const AeroPanel = memo(function AeroPanel({
       speedLabel = 'GPS'
     }
     if (!speed || !ay || (!lateral && !ax)) return null
-    const y = inG(ay)
-    const x = ax ? inG(ax) : null
+    const y = accelInG(ay)
+    const x = ax ? accelInG(ax) : null
     const g = new Float64Array(speed.length)
     for (let i = 0; i < g.length; i++) {
       g[i] = lateral || !x ? Math.abs(y[i]) : Math.hypot(x[i], y[i])
     }
-    return { speed, g, speedLabel, unit, k: unit === 'mph' ? 2.23694 : 3.6 }
-  }, [session, distance, distanceFromGps, lateral])
+    const source = [ay, lateral ? undefined : ax]
+      .filter((c): c is Channel => !!c)
+      .map(channelTitle)
+      .join(' and ')
+    return { speed, g, speedLabel, unit, k: unit === 'mph' ? 2.23694 : 3.6, source }
+  }, [session, distance, distanceFromGps, lateral, raw])
 
   useEffect(() => {
     const host = hostRef.current
@@ -348,10 +359,28 @@ export const AeroPanel = memo(function AeroPanel({
               <option value="lateral">Lateral only</option>
             </select>
           </label>
+          {hasClean && hasRaw && (
+            <label
+              className="flex items-center gap-1 text-zinc-500"
+              title="Filtered uses Lat G and Long G: the accelerometers with engine and road vibration removed (2 Hz low-pass). Raw uses the accelerometer channels as logged, which read well above the car's real g on a rigidly mounted sensor"
+            >
+              Data
+              <select
+                aria-label="Accelerometer data for the aero plot"
+                className="rounded border border-zinc-700 bg-zinc-900 px-1 py-0.5 text-zinc-200 outline-none focus:border-red-500"
+                value={raw ? 'raw' : 'filtered'}
+                onChange={(e) => setWantRaw(e.target.value === 'raw')}
+              >
+                <option value="filtered">Filtered g</option>
+                <option value="raw">Raw accelerometer</option>
+              </select>
+            </label>
+          )}
           <Swatch
             color={MEASURED}
-            label={`Measured (${Math.round(AERO_PERCENTILE * 100)}th pct per speed)`}
+            label={`${raw ? 'Measured, raw' : hasClean ? 'Measured, filtered' : 'Measured'} (${Math.round(AERO_PERCENTILE * 100)}th pct per speed)`}
           />
+          {inputs && <span className="text-zinc-500">from {inputs.source}</span>}
           {car.clA > 0 && <Swatch color={LIMIT} dash label={`Limit, ClA ${car.clA}`} />}
           <Swatch color={TYRES} dash label={`Tyres only, μ ${car.tireMu}`} />
           <Swatch color={FIT} dash label="Fit to data" />

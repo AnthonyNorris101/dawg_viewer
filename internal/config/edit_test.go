@@ -4,6 +4,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -140,6 +141,63 @@ func TestSaveCar(t *testing.T) {
 	}
 }
 
+func TestSaveCarSimInputs(t *testing.T) {
+	path := writeProfile(t, profileYAML)
+	car := Car{
+		Mass: 290, Torque: [][2]float64{{4000, 40}, {8000, 57.5}, {12000, 47}},
+		DriveEff: 0.9, ShiftTime: 0.12, LaunchRPM: 8500, TireMuLat: 1.6, TireLoadGrip: 0.88, RollRes: 0.02,
+		TrackFront: 1.2, TrackRear: 1.15, SpringFront: 35, SpringRear: 44, MotionFront: 0.9, MotionRear: 0.95,
+		ArbFront: 250, RollCenterF: 0.03, RollCenterR: -0.01, UnsprungFront: 9, UnsprungRear: 10, TireRate: 110,
+	}
+	if err := SaveCar(path, car); err != nil {
+		t.Fatal(err)
+	}
+	got := loadProfile(t, path).Car
+	if len(got.Torque) != 3 || got.Torque[1] != [2]float64{8000, 57.5} {
+		t.Fatalf("torque curve not saved: %+v", got.Torque)
+	}
+	got.Torque, car.Torque = nil, nil
+	if !reflect.DeepEqual(got, car) {
+		t.Fatalf("sim inputs not saved:\n got %+v\nwant %+v", got, car)
+	}
+	car.Torque = [][2]float64{{4000, -1}}
+	if err := SaveCar(path, car); err == nil {
+		t.Fatal("negative torque saved")
+	}
+	if len(loadProfile(t, path).Car.Torque) != 3 {
+		t.Fatal("a refused save changed the profile")
+	}
+}
+
+func TestSaveCarTireCoefficients(t *testing.T) {
+	path := writeProfile(t, profileYAML)
+	car := Car{Mass: 290, Tire: map[string]float64{"pcy1": 1.4, "pky1": 30, "pdy2": -0.15, "fnomin": 700}}
+	if err := SaveCar(path, car); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadProfile(t, path).Car.Tire; !reflect.DeepEqual(got, car.Tire) {
+		t.Fatalf("tire coefficients not saved: %+v", got)
+	}
+	b, _ := os.ReadFile(path)
+	if !strings.Contains(string(b), "tire: {fnomin: 700, pcy1: 1.4, pdy2: -0.15, pky1: 30}") {
+		t.Fatalf("tire coefficients not written in key order:\n%s", b)
+	}
+	for _, bad := range []map[string]float64{{"PCY1": 1.4}, {"pcy1: 2, mass": 1}, {"pcy1": math.NaN()}} {
+		if err := SaveCar(path, Car{Mass: 290, Tire: bad}); err == nil {
+			t.Fatalf("saved unusable tire coefficients %v", bad)
+		}
+	}
+	if got := loadProfile(t, path).Car.Tire; !reflect.DeepEqual(got, car.Tire) {
+		t.Fatal("a refused save changed the profile")
+	}
+	if err := SaveCar(path, Car{Mass: 290}); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadProfile(t, path).Car.Tire; len(got) != 0 {
+		t.Fatalf("tire coefficients not cleared: %+v", got)
+	}
+}
+
 func TestSaveFittedCalibrations(t *testing.T) {
 	path := writeProfile(t, profileYAML)
 	pts := [][2]float64{{400, 0}, {1200, 21}, {2400, 48}, {3600, 70}}
@@ -166,5 +224,48 @@ func TestSaveFittedCalibrations(t *testing.T) {
 	fitted, err := Calibration{Type: "poly", Degree: 1, Points: [][2]float64{{0, 1}, {10, 21}}}.Converter()
 	if err != nil || math.Abs(fitted(5)-11) > 1e-9 {
 		t.Fatalf("poly from points: %v", err)
+	}
+}
+
+func TestParseCar(t *testing.T) {
+	file := writeProfile(t, profileYAML)
+	want := Car{
+		Mass: 277, Wheelbase: 1.53, FinalDrive: 3.27, Redline: 13000, ClA: -0.36,
+		Gears:  []float64{2.583, 2, 1.667},
+		Torque: [][2]float64{{4000, 15}, {9500, 47.7}, {12500, 16.8}},
+		Tire:   map[string]float64{"pcy1": 1.47938, "fnomin": 1110},
+	}
+	if err := SaveCar(file, want); err != nil {
+		t.Fatal(err)
+	}
+	profile, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ParseCar(profile)
+	if err != nil {
+		t.Fatalf("a profile saved from the Car tab: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v\nwant %+v", got, want)
+	}
+
+	bare, err := ParseCar([]byte("mass: 250\nwheelbase: 1.6\n"))
+	if err != nil || bare.Mass != 250 || bare.Wheelbase != 1.6 {
+		t.Fatalf("a bare list of car values: %+v, %v", bare, err)
+	}
+	for name, text := range map[string]string{
+		"a profile with no car block": "id: g26\nname: G26\n",
+		"a misspelt value":            "car:\n  mas: 250\n",
+		"an empty car block":          "car:\n",
+		"not YAML":                    "{{{",
+		"nothing":                     "",
+	} {
+		if _, err := ParseCar([]byte(text)); err == nil {
+			t.Errorf("%s: want an error", name)
+		}
+	}
+	if _, err := ParseCar([]byte("id: g26\n")); err == nil || !strings.Contains(err.Error(), "no car: block") {
+		t.Fatalf("err = %v, want it to say the file has no car block", err)
 	}
 }

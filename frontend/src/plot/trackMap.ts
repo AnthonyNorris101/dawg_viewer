@@ -1,5 +1,6 @@
 import { validFix, type Beacon } from '../analysis/track'
 import { FONT, MUTED, mountCanvas, rampColor, SLOT_COLORS } from './canvas'
+import { drawAttribution, drawTiles, type TileSource } from './tiles'
 
 const RAD = Math.PI / 180
 const EARTH_R = 6371008.8
@@ -26,6 +27,7 @@ export interface TrackMapOptions {
   beacon(): Beacon | null
   onPick?(lat: number, lon: number): void
   pickActive?(): boolean
+  background?(): TileSource | null
   follow?: boolean
 }
 
@@ -40,6 +42,7 @@ export function mountTrackMap(host: HTMLElement, opts: TrackMapOptions) {
   let userMoved = false
   let size = { w: 0, h: 0 }
   let highlightCount = 0
+  let redrawBase = () => {}
 
   const project = (la: number, lo: number): [number, number] => [(lo - lon0) * kx, (la - lat0) * ky]
   const toPx = (x: number, y: number): [number, number] => [
@@ -110,12 +113,35 @@ export function mountTrackMap(host: HTMLElement, opts: TrackMapOptions) {
       }
     }
 
+    const bg = opts.background?.() ?? null
+    if (bg) {
+      drawTiles(
+        ctx,
+        {
+          w,
+          h,
+          metersPerPixel: 1 / scale,
+          toLatLon,
+          toPx: (la, lo) => toPx(...project(la, lo)),
+        },
+        bg,
+        () => redrawBase(),
+      )
+      ctx.fillStyle = 'rgba(9, 9, 11, 0.3)'
+      ctx.fillRect(0, 0, w, h)
+    }
+
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
     {
       const all = new Path2D()
       trace(0, t.n - 1, () => all)
-      ctx.strokeStyle = MUTED
+      if (bg) {
+        ctx.strokeStyle = 'rgba(9, 9, 11, 0.55)'
+        ctx.lineWidth = 4
+        ctx.stroke(all)
+      }
+      ctx.strokeStyle = bg ? '#d4d4d8' : MUTED
       ctx.lineWidth = 2
       ctx.stroke(all)
     }
@@ -167,7 +193,9 @@ export function mountTrackMap(host: HTMLElement, opts: TrackMapOptions) {
       ctx.textBaseline = 'middle'
       ctx.fillText('S/F', px + 15, py - 8)
     }
+    if (bg) drawAttribution(ctx, w, h, bg.attribution)
   })
+  redrawBase = () => c.redraw()
 
   const top = mountCanvas(host, (ctx) => {
     const t = opts.track()

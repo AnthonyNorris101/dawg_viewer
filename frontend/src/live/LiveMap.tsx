@@ -2,7 +2,9 @@ import { useEffect, useRef, useState, type DragEvent } from 'react'
 import type { BentoSize } from '../state/liveBento'
 import { formatLapTime, lowerBound, validFix } from '../analysis/track'
 import { mountTrackMap } from '../plot/trackMap'
+import { MapBackgroundSelect } from '../components/MapBackgroundSelect'
 import { track, useTrack } from '../state/analysis'
+import { currentMapSource, mapBackground } from '../state/mapBackground'
 import { toolbarButton, toolbarButtonActive } from '../ui'
 import { onLiveFrame, store } from './connection'
 
@@ -107,6 +109,7 @@ export function LiveMap({
       },
       cursor: () => (store.length > 0 ? [{ i: store.length - 1, slot: 0 }] : []),
       beacon: () => track.get().beacon,
+      background: currentMapSource,
       pickActive: () => pickRef.current,
       onPick: (lat, lon) => {
         track.set({ ...track.get(), beacon: { lat, lon } })
@@ -134,10 +137,12 @@ export function LiveMap({
       lapTiming()
       update()
     })
+    const offBackground = mapBackground.subscribe(update)
     return () => {
       off()
       offTiming()
       offTrack()
+      offBackground()
       map.destroy()
     }
   }, [])
@@ -221,6 +226,9 @@ export function LiveMap({
       </div>
       <div className="relative min-h-0 flex-1">
         <div ref={hostRef} className="absolute inset-0 cursor-crosshair" />
+        <div className="absolute top-1.5 right-1.5 z-10 rounded bg-zinc-950/80 px-1.5 py-0.5 text-xs">
+          <MapBackgroundSelect />
+        </div>
       </div>
       <p className="border-t border-zinc-800 px-3 py-1 text-[11px] text-zinc-600">
         Last {TRAIL_S / 60} min highlighted. Wheel to zoom, drag to pan, double-click to fit.

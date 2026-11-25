@@ -6,9 +6,11 @@ import { RAMP_CSS } from '../plot/canvas'
 import type { ViewSync } from '../plot/sync'
 import { mountTrackMap } from '../plot/trackMap'
 import { updateTrack, useTrack } from '../state/analysis'
+import { useMapSource } from '../state/mapBackground'
 import type { LayoutAction, Panel } from '../state/layout'
 import { toolbarButton, toolbarButtonActive } from '../ui'
 import type { XView } from '../viewer/xview'
+import { MapBackgroundSelect } from './MapBackgroundSelect'
 import { ChannelSelect, PanelFrame } from './PanelFrame'
 
 interface Props {
@@ -39,6 +41,8 @@ export const TrackMapPanel = memo(function TrackMapPanel({
   const [picking, setPicking] = useState(false)
   const pickRef = useRef(picking)
   const beaconRef = useRef(beacon)
+  const background = useMapSource()
+  const backgroundRef = useRef(background)
 
   const colorId = panel.channelIds[0] ?? ''
   const colorCh = session.byId.get(colorId)
@@ -75,6 +79,7 @@ export const TrackMapPanel = memo(function TrackMapPanel({
         cursorIdx == null ? [] : view.samplesAt(cursorIdx).map((i, slot) => ({ i, slot })),
       beacon: () => beaconRef.current,
       pickActive: () => pickRef.current,
+      background: () => backgroundRef.current,
       onPick: (lat, lon) => {
         updateTrack({ beacon: { lat, lon } })
         setPicking(false)
@@ -97,8 +102,9 @@ export const TrackMapPanel = memo(function TrackMapPanel({
   useEffect(() => {
     pickRef.current = picking
     beaconRef.current = beacon
+    backgroundRef.current = background
     redrawRef.current()
-  }, [beacon, picking])
+  }, [beacon, picking, background])
 
   return (
     <PanelFrame
@@ -138,7 +144,12 @@ export const TrackMapPanel = memo(function TrackMapPanel({
       }
     >
       {gps ? (
-        <div ref={hostRef} className="absolute inset-0 cursor-crosshair" />
+        <>
+          <div ref={hostRef} className="absolute inset-0 cursor-crosshair" />
+          <div className="absolute top-1.5 right-1.5 z-10 rounded bg-zinc-950/80 px-1.5 py-0.5 text-xs">
+            <MapBackgroundSelect />
+          </div>
+        </>
       ) : (
         <p className="absolute inset-0 grid place-items-center px-4 text-center text-sm text-zinc-600">
           This log has no GPS position (PosLat / PosLong)

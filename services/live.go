@@ -15,6 +15,7 @@ import (
 	"dawg_viewer/internal/itv"
 	"dawg_viewer/internal/link"
 	"dawg_viewer/internal/live"
+	"dawg_viewer/internal/maptiles"
 )
 
 const (
@@ -47,7 +48,10 @@ type Info struct {
 	Channels      map[string]config.ChannelMeta `json:"channels"`
 	Calibrations  map[string]config.Calibration `json:"calibrations"`
 	Car           config.Car                    `json:"car"`
+	StockCar      config.Car                    `json:"stockCar"`
 	SettingsError string                        `json:"settingsError"`
+	MapSources    []maptiles.Source             `json:"mapSources"`
+	TrackSearch   TrackSearch                   `json:"trackSearch"`
 }
 
 type ChannelSettings struct {
@@ -58,6 +62,7 @@ type ChannelSettings struct {
 
 type LiveService struct {
 	override string
+	tracks   trackFinder
 
 	mu          sync.Mutex
 	ctx         context.Context
@@ -123,6 +128,19 @@ func (s *LiveService) infoLocked() Info {
 	if s.settingsErr != nil {
 		info.SettingsError = s.settingsErr.Error()
 	}
+	var mapErr error
+	info.MapSources, mapErr = maptiles.Merge(s.settings.MapSources)
+	if mapErr != nil && info.SettingsError == "" {
+		info.SettingsError = mapErr.Error()
+	}
+	search := s.settings.TrackSearch
+	if err := search.Validate(); err != nil {
+		if info.SettingsError == "" {
+			info.SettingsError = err.Error()
+		}
+	} else {
+		info.TrackSearch = TrackSearch{Online: len(search.Servers()) > 0, ByName: search.Geocoder != ""}
+	}
 	for _, p := range s.profiles {
 		info.Profiles = append(info.Profiles, ProfileSummary{p.ID, p.Name, p.File})
 	}
@@ -136,13 +154,32 @@ func (s *LiveService) infoLocked() Info {
 		}
 		info.Car = s.active.Car
 	}
+	info.StockCar = config.StockCar()
 	return info
+}
+
+type Stock struct {
+	Setup     string `json:"setup"`
+	SampleLog string `json:"sampleLog"`
+}
+
+func (s *LiveService) Stock() Stock {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return Stock{
+		Setup:     config.StockSetup(),
+		SampleLog: config.SamplePath(s.dir.Path, s.settings),
+	}
 }
 
 func (s *LiveService) SaveChannel(c ChannelSettings) (Info, error) {
 	return s.editProfile(func(file string) error {
 		return config.SaveChannel(file, c.Name, c.Meta, c.Calibration)
 	})
+}
+
+func (s *LiveService) ReadCarFile(text string) (config.Car, error) {
+	return config.ParseCar([]byte(text))
 }
 
 func (s *LiveService) SaveCar(car config.Car) (Info, error) {

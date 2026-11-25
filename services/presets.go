@@ -14,21 +14,39 @@ type Preset struct {
 	Modified int64  `json:"modified"`
 }
 
-const maxPresetBytes = 4 << 20
-
-func (s *LiveService) presetDir() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return filepath.Join(s.dir.Path, "presets")
+type SavedTrack struct {
+	Name     string `json:"name"`
+	Modified int64  `json:"modified"`
 }
 
-func presetFile(dir, name string) (string, error) {
+const maxPresetBytes = 4 << 20
+
+type library struct {
+	folder string
+	noun   string
+}
+
+var (
+	presetLibrary  = library{folder: "presets", noun: "setup"}
+	trackLibrary   = library{folder: "tracks", noun: "track"}
+	sessionLibrary = library{folder: "", noun: "session"}
+)
+
+const sessionName = "session"
+
+func (s *LiveService) libraryDir(l library) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return filepath.Join(s.dir.Path, l.folder)
+}
+
+func (l library) file(dir, name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return "", errors.New("give the setup a name")
+		return "", errors.New("give the " + l.noun + " a name")
 	}
 	if len(name) > 80 {
-		return "", errors.New("the setup name is too long")
+		return "", errors.New("the " + l.noun + " name is too long")
 	}
 	clean := strings.Map(func(r rune) rune {
 		if r < 32 || strings.ContainsRune(`<>:"/\|?*`, r) {
@@ -38,13 +56,13 @@ func presetFile(dir, name string) (string, error) {
 	}, name)
 	clean = strings.TrimRight(clean, ". ")
 	if clean == "" {
-		return "", errors.New("give the setup a name")
+		return "", errors.New("give the " + l.noun + " a name")
 	}
 	return filepath.Join(dir, clean+".json"), nil
 }
 
-func (s *LiveService) Presets() ([]Preset, error) {
-	entries, err := os.ReadDir(s.presetDir())
+func (l library) list(dir string) ([]Preset, error) {
+	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return []Preset{}, nil
 	}
@@ -69,14 +87,13 @@ func (s *LiveService) Presets() ([]Preset, error) {
 	return out, nil
 }
 
-func (s *LiveService) SavePreset(name, data string) (Preset, error) {
-	dir := s.presetDir()
-	file, err := presetFile(dir, name)
+func (l library) save(dir, name, data string) (Preset, error) {
+	file, err := l.file(dir, name)
 	if err != nil {
 		return Preset{}, err
 	}
 	if len(data) > maxPresetBytes || !json.Valid([]byte(data)) {
-		return Preset{}, errors.New("the setup isn't valid JSON")
+		return Preset{}, errors.New("the " + l.noun + " isn't valid JSON")
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return Preset{}, err
@@ -99,8 +116,8 @@ func (s *LiveService) SavePreset(name, data string) (Preset, error) {
 	}, nil
 }
 
-func (s *LiveService) LoadPreset(name string) (string, error) {
-	file, err := presetFile(s.presetDir(), name)
+func (l library) load(dir, name string) (string, error) {
+	file, err := l.file(dir, name)
 	if err != nil {
 		return "", err
 	}
@@ -109,14 +126,14 @@ func (s *LiveService) LoadPreset(name string) (string, error) {
 		return "", err
 	}
 	if info.Size() > maxPresetBytes {
-		return "", errors.New("the setup file is too big")
+		return "", errors.New("the " + l.noun + " file is too big")
 	}
 	b, err := os.ReadFile(file)
 	return string(b), err
 }
 
-func (s *LiveService) DeletePreset(name string) error {
-	file, err := presetFile(s.presetDir(), name)
+func (l library) remove(dir, name string) error {
+	file, err := l.file(dir, name)
 	if err != nil {
 		return err
 	}
@@ -125,4 +142,55 @@ func (s *LiveService) DeletePreset(name string) error {
 		return nil
 	}
 	return err
+}
+
+func (s *LiveService) Presets() ([]Preset, error) {
+	return presetLibrary.list(s.libraryDir(presetLibrary))
+}
+
+func (s *LiveService) SavePreset(name, data string) (Preset, error) {
+	return presetLibrary.save(s.libraryDir(presetLibrary), name, data)
+}
+
+func (s *LiveService) LoadPreset(name string) (string, error) {
+	return presetLibrary.load(s.libraryDir(presetLibrary), name)
+}
+
+func (s *LiveService) DeletePreset(name string) error {
+	return presetLibrary.remove(s.libraryDir(presetLibrary), name)
+}
+
+func (s *LiveService) LoadSession() (string, error) {
+	data, err := sessionLibrary.load(s.libraryDir(sessionLibrary), sessionName)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	return data, err
+}
+
+func (s *LiveService) SaveSession(data string) error {
+	_, err := sessionLibrary.save(s.libraryDir(sessionLibrary), sessionName, data)
+	return err
+}
+
+func (s *LiveService) SavedTracks() ([]SavedTrack, error) {
+	found, err := trackLibrary.list(s.libraryDir(trackLibrary))
+	out := make([]SavedTrack, len(found))
+	for i, f := range found {
+		out[i] = SavedTrack(f)
+	}
+	return out, err
+}
+
+func (s *LiveService) SaveTrack(name, data string) (SavedTrack, error) {
+	saved, err := trackLibrary.save(s.libraryDir(trackLibrary), name, data)
+	return SavedTrack(saved), err
+}
+
+func (s *LiveService) LoadTrack(name string) (string, error) {
+	return trackLibrary.load(s.libraryDir(trackLibrary), name)
+}
+
+func (s *LiveService) DeleteTrack(name string) error {
+	return trackLibrary.remove(s.libraryDir(trackLibrary), name)
 }

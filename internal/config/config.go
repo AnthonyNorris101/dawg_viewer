@@ -17,6 +17,8 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"dawg_viewer/internal/calib"
+	"dawg_viewer/internal/maptiles"
+	"dawg_viewer/internal/tracks"
 )
 
 //go:embed defaults
@@ -101,7 +103,11 @@ func seed(dir string) error {
 	if err != nil {
 		return err
 	}
-	return seedDevices(dir)
+	if err := seedDevices(dir); err != nil {
+		return err
+	}
+	_ = seedSample(dir)
+	return nil
 }
 
 func seedDevices(dir string) error {
@@ -168,6 +174,9 @@ type Settings struct {
 	LogsDir        string  `yaml:"logs_dir" json:"logsDir"`
 	CSVRateHz      int     `yaml:"csv_rate_hz" json:"csvRateHz"`
 	LiveBackup     *bool   `yaml:"live_backup" json:"liveBackup"`
+
+	MapSources  []maptiles.Source `yaml:"map_sources" json:"mapSources,omitempty"`
+	TrackSearch tracks.Config     `yaml:"track_search" json:"trackSearch"`
 }
 
 // BackupLive reports whether live sessions write a backup log (on unless set to false).
@@ -326,6 +335,29 @@ type Car struct {
 	CdA        float64   `yaml:"cda" json:"cdA"`
 	AeroFront  float64   `yaml:"aero_front" json:"aeroFront"`
 	AirDensity float64   `yaml:"air_density" json:"airDensity"`
+
+	Torque       [][2]float64 `yaml:"torque" json:"torque,omitempty"`
+	DriveEff     float64      `yaml:"drive_eff" json:"driveEff"`
+	ShiftTime    float64      `yaml:"shift_time" json:"shiftTime"`
+	LaunchRPM    float64      `yaml:"launch_rpm" json:"launchRpm"`
+	TireMuLat    float64      `yaml:"tire_mu_lat" json:"tireMuLat"`
+	TireLoadGrip float64      `yaml:"tire_load_grip" json:"tireLoadGrip"`
+	RollRes      float64      `yaml:"roll_res" json:"rollRes"`
+
+	TrackFront    float64            `yaml:"track_front" json:"trackFront"`
+	TrackRear     float64            `yaml:"track_rear" json:"trackRear"`
+	SpringFront   float64            `yaml:"spring_front" json:"springFront"`
+	SpringRear    float64            `yaml:"spring_rear" json:"springRear"`
+	MotionFront   float64            `yaml:"motion_front" json:"motionFront"`
+	MotionRear    float64            `yaml:"motion_rear" json:"motionRear"`
+	ArbFront      float64            `yaml:"arb_front" json:"arbFront"`
+	ArbRear       float64            `yaml:"arb_rear" json:"arbRear"`
+	RollCenterF   float64            `yaml:"rc_front" json:"rcFront"`
+	RollCenterR   float64            `yaml:"rc_rear" json:"rcRear"`
+	UnsprungFront float64            `yaml:"unsprung_front" json:"unsprungFront"`
+	UnsprungRear  float64            `yaml:"unsprung_rear" json:"unsprungRear"`
+	TireRate      float64            `yaml:"tire_rate" json:"tireRate"`
+	Tire          map[string]float64 `yaml:"tire" json:"tire,omitempty"`
 }
 
 type Calibration struct {

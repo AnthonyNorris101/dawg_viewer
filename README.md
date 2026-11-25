@@ -18,6 +18,10 @@ Open a local recording in the Viewer, or use the Logs tab to download one from t
 
 The Viewer also includes XY and histogram plots, track maps, statistics, signal math, filtering, spectrum, launch and aero analysis, and saved setups. The [user guide](docs/user-guide.md) walks through these tools in more detail.
 
+### Simulate the car
+
+Enter the car on the Car tab (torque curve, gearing, tires, aero, suspension) and the Sim tab works out what it should be able to do: 75 m acceleration, skidpad, top speed and a lap of a logged, typed, imported (OptimumLap) or OpenStreetMap track, with an ideal line through it. It overlays the result on real laps to show where time is being lost, and lets you try a change before making it. Track maps can also draw satellite or street imagery under the GPS trace.
+
 ### Adjust settings
 
 Use **Open config folder** to edit settings or device profiles as YAML. The app can store a portable `dawg_config` folder next to the program; otherwise it uses your operating system's user configuration folder. See the [configuration guide](docs/configuration.md) for paths and options.

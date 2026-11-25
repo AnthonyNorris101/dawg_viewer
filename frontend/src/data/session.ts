@@ -1,7 +1,11 @@
+import type { Origin } from './origin'
+
 export interface Channel {
   id: string
   name: string
   label?: string
+  hint?: string
+  origin?: Origin
   group: string
   unit: string
   color: string
@@ -18,6 +22,8 @@ export interface Session {
   time: Float64Array
   channels: Channel[]
   byId: Map<string, Channel>
+  simulated?: boolean
+  fixedLaps?: number[]
 }
 
 export const CHANNEL_COLORS = [

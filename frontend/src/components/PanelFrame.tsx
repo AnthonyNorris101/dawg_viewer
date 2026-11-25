@@ -1,6 +1,18 @@
-import type { Dispatch, ReactNode, RefObject } from 'react'
+import type {
+  Dispatch,
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactNode,
+  RefObject,
+} from 'react'
 import type { MountedPlot } from '../plot/mountPlot'
-import type { LayoutAction, Panel } from '../state/layout'
+import {
+  MAX_PANEL_ROWS,
+  MIN_PANEL_ROWS,
+  panelRows,
+  type LayoutAction,
+  type Panel,
+} from '../state/layout'
 
 const iconButton = 'shrink-0 px-1 text-zinc-600 hover:text-zinc-200'
 
@@ -23,13 +35,50 @@ export function PanelFrame({
   tools?: ReactNode
   children: ReactNode
 }) {
+  const rows = panelRows(panel, tall)
+  const setRows = (next: number | undefined) =>
+    dispatch({ type: 'setPanel', panelId: panel.id, patch: { rows: next } })
+  const clamp = (n: number) => Math.min(MAX_PANEL_ROWS, Math.max(MIN_PANEL_ROWS, n))
+
+  const startResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return
+    const frame = event.currentTarget.parentElement
+    if (!frame) return
+    event.preventDefault()
+    const move = (e: PointerEvent) => {
+      const box = frame.getBoundingClientRect()
+      const now = Number(frame.dataset.rows) || rows
+      const unit = box.height / now
+      if (!(unit > 0)) return
+      const wanted = e.clientY - box.top
+      const next = clamp(Math.round(wanted / unit))
+      if (next !== now && Math.abs(wanted - box.height) > unit / 2) setRows(next)
+    }
+    const stop = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', stop)
+      window.removeEventListener('pointercancel', stop)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', stop)
+    window.addEventListener('pointercancel', stop)
+  }
+
+  const resizeByKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+    event.preventDefault()
+    setRows(clamp(rows + (event.key === 'ArrowDown' ? 1 : -1)))
+  }
+
   return (
     <section
-      className={`flex min-h-0 min-w-0 flex-col overflow-hidden border-l-2 bg-zinc-950 ${
+      className={`relative flex min-h-0 min-w-0 flex-col overflow-hidden border-l-2 bg-zinc-950 ${
         active ? 'border-red-500' : 'border-transparent'
-      } ${panel.wide ? 'col-span-2' : ''} ${tall ? 'row-span-2' : ''}`}
+      } ${panel.wide ? 'col-span-2' : ''}`}
+      style={{ gridRow: `span ${rows}` }}
       onPointerDown={() => dispatch({ type: 'setActive', panelId: panel.id })}
       data-panel-id={panel.id}
+      data-rows={rows}
     >
       <header className="flex items-center gap-3 border-b border-zinc-800 px-3 py-1 text-xs">
         <span className="shrink-0 text-zinc-500">{title}</span>
@@ -78,6 +127,20 @@ export function PanelFrame({
         </div>
       </header>
       <div className="relative min-h-0 flex-1">{children}</div>
+      <div
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label={`Resize ${title}`}
+        aria-valuenow={rows}
+        aria-valuemin={MIN_PANEL_ROWS}
+        aria-valuemax={MAX_PANEL_ROWS}
+        tabIndex={0}
+        title="Drag to make this taller or shorter. Double-click to go back to the usual height."
+        className="absolute inset-x-0 bottom-0 z-10 h-1.5 cursor-ns-resize touch-none outline-none hover:bg-red-500/50 focus-visible:bg-red-500/50"
+        onPointerDown={startResize}
+        onDoubleClick={() => setRows(undefined)}
+        onKeyDown={resizeByKey}
+      />
     </section>
   )
 }

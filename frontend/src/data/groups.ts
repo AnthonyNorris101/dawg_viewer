@@ -1,4 +1,5 @@
 const RULES: [RegExp, string][] = [
+  [/^(lat|long|vert) g$/i, 'Accelerometer'],
   [/^(acc(el)?[ _]?[xyz]|yaw|pitch|roll|gyro|imu)/i, 'Accelerometer'],
   [/^(pos(lat|long?|alt)|lat(itude)?|lon(g|gitude)?|gps|alt(itude)?|heading)/i, 'GPS'],
   [/(damp|shock|susp|travel|ride.?h|wheel.?pos)/i, 'Suspension'],
@@ -33,5 +34,6 @@ export function groupRank(group: string): number {
   if (i >= 0) return i
   if (group === 'Analysis') return 100
   if (group === 'Math') return 101
+  if (group === 'Sim') return 102
   return 50
 }

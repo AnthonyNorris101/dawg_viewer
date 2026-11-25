@@ -17,13 +17,15 @@ import {
 
 export function useAnalysis(
   raw: Session,
-  metas: Record<string, ChannelMeta | undefined> | undefined,
+  logMetas: Record<string, ChannelMeta | undefined> | undefined,
 ): Analysis {
+  const metas = raw.simulated ? undefined : logMetas
   const unitKey = JSON.stringify(raw.channels.map((c) => metas?.[c.name]?.unit || c.unit))
   const base = useMemo(() => withUnits(raw, JSON.parse(unitKey) as string[]), [raw, unitKey])
   const track = useTrack()
   const defs = useMathDefs()
-  const splitTimes = useSplits()[raw.path]
+  const savedSplits = useSplits()[raw.path]
+  const splitTimes = raw.fixedLaps ?? savedSplits
   const launchMarks = useLaunchMarks()[raw.path]
   const rawGps = useMemo(() => findGps(base.channels), [base])
   const fusionSettings = useMemo(
@@ -50,7 +52,7 @@ export function useAnalysis(
     () => sessionDistance(base, gps, distanceSettings),
     [base, gps, distanceSettings],
   )
-  const mode = track.lapMode ?? 'loop'
+  const mode = raw.fixedLaps ? 'manual' : (track.lapMode ?? 'loop')
   const crossings = useMemo(
     () =>
       gps && track.beacon && (mode === 'loop' || mode === 'gates')

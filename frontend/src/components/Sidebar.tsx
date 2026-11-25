@@ -163,6 +163,12 @@ function LapsTab({
             – (hover a plot)
           </span>
         </p>
+        {session.simulated && (
+          <p className="text-fuchsia-200">
+            This is a simulated lap. Its laps are fixed, one per simulated run, so the settings
+            below do not change them.
+          </p>
+        )}
         <label className="flex items-center gap-1.5 text-zinc-400">
           Laps from
           <select

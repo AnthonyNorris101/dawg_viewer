@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -275,6 +277,48 @@ func setEntry(lines []string, section, key, value string) ([]string, error) {
 	return out, nil
 }
 
+var tireKeyRe = regexp.MustCompile(`^[a-z][a-z0-9]{1,15}$`)
+
+const maxCarFileBytes = 1 << 20
+
+func ParseCar(text []byte) (Car, error) {
+	if len(text) > maxCarFileBytes {
+		return Car{}, errors.New("that file is too big to be a device or car file")
+	}
+	var root yaml.Node
+	if err := yaml.Unmarshal(text, &root); err != nil {
+		return Car{}, errors.New("that file is not YAML, so it is not a device or car file")
+	}
+	if len(root.Content) == 0 || root.Content[0].Kind != yaml.MappingNode {
+		return Car{}, errors.New("no car values found in that file")
+	}
+	top := root.Content[0]
+	block, inProfile := top, false
+	for i := 0; i+1 < len(top.Content); i += 2 {
+		if top.Content[i].Value == "car" {
+			block, inProfile = top.Content[i+1], true
+			break
+		}
+	}
+	if block.Kind != yaml.MappingNode {
+		return Car{}, errors.New("the car: block in that file is empty")
+	}
+	raw, err := yaml.Marshal(block)
+	if err != nil {
+		return Car{}, err
+	}
+	var car Car
+	dec := yaml.NewDecoder(bytes.NewReader(raw))
+	dec.KnownFields(true)
+	if err := dec.Decode(&car); err != nil {
+		if !inProfile {
+			return Car{}, errors.New("that file has no car: block (a device profile saved from the Car tab has one)")
+		}
+		return Car{}, fmt.Errorf("the car: block could not be read: %w", err)
+	}
+	return car, nil
+}
+
 func SaveCar(file string, car Car) error {
 	b, err := os.ReadFile(file)
 	if err != nil {
@@ -316,10 +360,44 @@ func SaveCar(file string, car Car) error {
 		{"slip_low", car.SlipLow}, {"slip_high", car.SlipHigh}, {"target_g", car.TargetG},
 		{"cla", car.ClA}, {"cda", car.CdA}, {"aero_front", car.AeroFront},
 		{"air_density", car.AirDensity},
+		{"drive_eff", car.DriveEff}, {"shift_time", car.ShiftTime}, {"launch_rpm", car.LaunchRPM},
+		{"tire_mu_lat", car.TireMuLat}, {"tire_load_grip", car.TireLoadGrip}, {"roll_res", car.RollRes},
+		{"track_front", car.TrackFront}, {"track_rear", car.TrackRear},
+		{"spring_front", car.SpringFront}, {"spring_rear", car.SpringRear},
+		{"motion_front", car.MotionFront}, {"motion_rear", car.MotionRear},
+		{"arb_front", car.ArbFront}, {"arb_rear", car.ArbRear},
+		{"rc_front", car.RollCenterF}, {"rc_rear", car.RollCenterR},
+		{"unsprung_front", car.UnsprungFront}, {"unsprung_rear", car.UnsprungRear},
+		{"tire_rate", car.TireRate},
 	} {
 		if f.v != 0 {
 			block = append(block, "  "+f.key+": "+strconv.FormatFloat(f.v, 'g', -1, 64))
 		}
+	}
+	if len(car.Torque) > 0 {
+		parts := make([]string, len(car.Torque))
+		for i, p := range car.Torque {
+			if math.IsNaN(p[0]) || math.IsNaN(p[1]) || math.IsInf(p[0], 0) || math.IsInf(p[1], 0) || p[0] <= 0 || p[1] < 0 {
+				return fmt.Errorf("torque point %d (%v rpm, %v N·m) is not usable", i+1, p[0], p[1])
+			}
+			parts[i] = "[" + strconv.FormatFloat(p[0], 'g', -1, 64) + ", " + strconv.FormatFloat(p[1], 'g', -1, 64) + "]"
+		}
+		block = append(block, "  torque: ["+strings.Join(parts, ", ")+"]")
+	}
+	if len(car.Tire) > 0 {
+		keys := make([]string, 0, len(car.Tire))
+		for k, v := range car.Tire {
+			if !tireKeyRe.MatchString(k) || math.IsNaN(v) || math.IsInf(v, 0) {
+				return fmt.Errorf("tire coefficient %q (%v) is not usable", k, v)
+			}
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		parts := make([]string, len(keys))
+		for i, k := range keys {
+			parts[i] = k + ": " + strconv.FormatFloat(car.Tire[k], 'g', -1, 64)
+		}
+		block = append(block, "  tire: {"+strings.Join(parts, ", ")+"}")
 	}
 
 	lines := strings.Split(string(b), "\n")

@@ -3,10 +3,12 @@
 React + TypeScript + Tailwind, built with Vite, plots drawn with uPlot.
 
 ```
-src/App.tsx        tabs (Live / Logs / Viewer / Car / Settings)
+src/App.tsx        tabs (Live / Logs / Viewer / Sim / Car / Settings)
 src/live/          live view: connection, store, follow mode, cards, plots, status bar
-src/views/         LiveView, LogsView, ViewerView, CarView, SettingsView
+src/views/         LiveView, LogsView, ViewerView, SimView, CarView, SettingsView
 src/viewer/        pure session analysis plus focused React controllers
+src/analysis/      pure numerical stages; analysis/sim/ is the vehicle simulation
+src/sim/           the Sim tab's pages
 src/plot/          uPlot wrapper and shared plot view state
 src/components/    channel list and viewer plot panel
 src/state/         persistence, analysis settings, workbook/layout reducers, panel metadata
@@ -139,7 +141,9 @@ the last panel empties it instead, so there's always one.
 ## Tabs (App.tsx)
 
 Live and Viewer stay mounted and are hidden with CSS, preserving their data
-and layouts across tab switches. Logs, Car, and Settings mount only while selected.
+and layouts across tab switches. Logs, Sim, Car, and Settings mount only while selected.
+Sim keeps its page, what-if changes and track choice in `state/sim.ts`, so
+remounting it loses nothing.
 
 ## Logs tab (views/LogsView.tsx)
 
@@ -157,7 +161,7 @@ buttons and shows an opening status; additional open requests are ignored.
 `viewer/openLog.ts` is the Wails/fetch adapter. It loads through `LogService.Load`, fetches its
 `dataUrl` once as an `ArrayBuffer`, and builds a `Session` whose columns are
 `Float64Array` views straight into that buffer using `data/columns.ts` (no copying) (units and precision come from the current device profile when the
-names match). `ViewerView` remounts per file. Opening a log from the Logs tab
+names match). `ViewerView` remounts per file. A log with north and east velocity (`VelNorth`, `VelEast`, as a VectorNav logs them) but no speed channel gets a `GPS Speed` channel in mph, their vector sum, so distance, laps, premade sheets and the simulator have a speed to work with. A log with accelerometer channels also gets `Lat G`, `Long G` and `Vert G` (`analysis/accel.ts`): the raw channel converted to g and low-passed at 2 Hz with a zero-phase filter, with `Long G` positive when speeding up and `Vert G` positive at rest. A rigidly mounted IMU on a car with an engine reports vibration several times larger than the car's real acceleration, and sampling it at the log rate folds that vibration into every frequency, so the raw channels overstate g; what the car is actually doing sits below about 2 Hz. The raw channels are left as they are for the spectrum and vibration tools. `accelAxes` also works out which way each axis points and stores it as the channel's `hint`, which is shown in brackets after the name: forward from the sign of acceleration against speed, sideways and yaw from their correlation with the heading change (velocity north/east, or GPS positions), vertical from its sign at rest. `Lat G` keeps the sensor's sign. Premade sheets, the G-G plot, and the Launch and Aero panels use the clean channels when they exist. Opening a log from the Logs tab
 switches to the Viewer.
 
 The Viewer works like Pi Toolbox: worksheets of panels, laps from a GPS
@@ -284,10 +288,13 @@ A panel has a `kind`: `time` (any number of channels), `xy` (`[x, y]`),
 `histogram` (`[channel]`) or `map` (`[colour channel]`). Clicking a channel in
 the list acts on the active panel: toggle for time plots, "newest pick is Y,
 previous Y becomes X" for XY, replace for histogram and map. Panels sit in a
-two-column grid; time plots default to full width, the others to half. Rows
-are at least 17rem tall (the Launch panel takes two), and the grid scrolls
-when a sheet has more than fits, so panels never get squeezed into each
-other. A panel clips its own contents and its legend gets at most two lines
+two-column grid; time plots default to full width, the others to half. The
+grid's rows are quarter-height units of at least 4.25rem. A panel spans
+`panelRows(panel)` of them: 4 by default (17rem), 8 for the Launch and Aero
+panels, or `panel.rows` once the user has dragged the handle on its bottom
+edge (`PanelFrame`), which steps a row at a time between 2 and 24; a
+double-click clears it. The grid scrolls when a sheet has more than fits,
+so panels never get squeezed into each other. A panel clips its own contents and its legend gets at most two lines
 before it scrolls.
 
 A workbook is a list of worksheets, each with its own layout. It is saved to
@@ -314,6 +321,29 @@ exact enough over a few km). Drawing skips points less than ~1 px from the
 last drawn one, and a coloured trace is drawn as 24 paths, one per colour
 bucket, instead of one stroke per segment, so a whole outing redraws quickly.
 
+### Map backgrounds (plot/tiles.ts, state/mapBackground.ts)
+
+`mountTrackMap` takes an optional `background()` that returns the chosen map
+source or null. When there is one, the base canvas draws Web Mercator tiles
+under the trace: `zoomFor` picks the shallowest zoom that is at least as
+detailed as the screen (never deeper than the source's `maxZoom`),
+`tilesIn` lists the tiles covering the view (at most 80, stepping to a
+shallower zoom if more would be needed), and each tile is drawn at the
+position its corners project to, so the imagery lines up with the map's own
+metre projection. A 30% dark veil goes over the imagery and the track gets a
+dark casing so the trace stays readable, and the source's attribution is drawn
+in the bottom corner.
+
+Tiles are `<img>` elements loaded from the app's own `/maptiles/…` path (see
+[backend.md](backend.md#internalmaptiles)); the frontend never contacts a tile
+server. `plot/tiles.ts` keeps up to 400 decoded images, asks the map to
+repaint when one arrives, and does not ask again for a failed tile for 60 s.
+
+The chosen source id is one value for the whole app (`mapBackground.v1` in
+localStorage, default off). `MapBackgroundSelect` lists the sources from
+`Info.mapSources` and is shown on the Viewer's map panels, the Live track map
+and the Sim tab's lap map.
+
 ### Side panel (components/Sidebar.tsx)
 
 - Laps: lap table (best lap in purple, Δ to best, max speed), tick laps to
@@ -332,7 +362,10 @@ bucket, instead of one stroke per segment, so a whole outing redraws quickly.
 Workbook, math channels, track settings and splits are small JSON values in
 the webview's localStorage, validated when read so a bad or old value falls
 back to the default. Storage can be missing or throw, so every access is
-wrapped and the app works without it.
+wrapped and the app works without it. `save` tells the `onStored` listeners,
+which is how the session (see Setups) copies every change into the config
+folder; `persisted` stores expose their `key` and reload when
+`restoreEntries` puts stored values back.
 
 ### Spectrum panel (analysis/spectrum.ts)
 
@@ -465,23 +498,90 @@ how far off it is: envelope area change for G-G, and for aero the change in
 summed grip over the speed bands both have in common (plus both ClA values
 when there's a fit). Saving under a name that already exists replaces it.
 
-### Setups (state/setup.ts, components/SetupsDialog.tsx, services/presets.go)
+### Simulated sessions
+
+`simSession(name, parts)` (`sim/simSession.ts`) lays simulated laps end to end
+in one `Session` so the Viewer can show them like a log. Each lap is sampled
+at close to 100 Hz, with the step chosen so the lap's last sample lands
+exactly on its simulated time; one extra sample before the first lap and one
+after the last keep `buildLaps` from making out- and in-laps. The session sets
+two optional `Session` fields:
+
+- `simulated: true`. `useAnalysis` then ignores the device profile's channel
+  labels and units (they describe sensors, and a unit change there would
+  relabel values without converting them), `derivedChannels` marks Distance
+  and the lap channels as theoretical, `useSimChannels` adds nothing, the
+  Viewer shows the SIMULATED badge and `App` treats it like the test-mode
+  log: it is not remembered as the last log, Reload returns it unchanged, and
+  the Sim tab is given the real session that was open before it (`simOf`).
+- `fixedLaps`: the lap boundaries in seconds. `useAnalysis` uses them as the
+  split times and forces manual lap mode, so the start/finish settings do not
+  apply.
+
+Every channel has `origin: 'theory'`. `Channel.origin` is an explicit
+provenance that `originOf` returns before its name and group rules, because
+`withMeta` regroups channels by name (Speed goes to Vehicle, Lat G to
+Accelerometer) and the group alone would no longer say where the data came
+from. Tracks without `origin` are placed at `NOWHERE` (1°N 1°E) so the map
+panels have coordinates.
+
+`showSimSheet` (`state/setup.ts`) adds a "Simulated lap" sheet to the saved
+workbook with `withSimSheet`, or selects it if it is already there, before
+`App` switches to the Viewer.
+
+### Setups (state/setup.ts, state/session.ts, components/SetupsDialog.tsx, services/presets.go)
 
 A setup is the workbook (sheets and panels), math channels (including
-filters), the track settings (start/finish, gate, distance source) and the
-launch settings, as one JSON object (`dawgViewerSetup: 1`, the same shape as
-Export setup). Named setups are files in `<config>/presets/`, written and
-listed by `LiveService.SavePreset` / `Presets` / `LoadPreset` /
-`DeletePreset`; names are kept as file names with characters Windows can't
-use replaced. A setup can remember the log that was open.
+filters), the track settings (start/finish, gate, distance source), the
+launch settings, lap references, the Sim settings, the damper table, and the
+split and launch marks, as one JSON object (`dawgViewerSetup: 1`, the same
+shape as Export setup). `originalSetup` is that object with every default.
+Named setups are files in `<config>/presets/`, written and listed by
+`LiveService.SavePreset` / `Presets` / `LoadPreset` / `DeletePreset`; names
+are kept as file names with characters Windows can't use replaced. A setup
+can remember the log that was open. Car values are not in a setup.
 
-Everything is also autosaved to localStorage as before. When the app opens
-and there is something to go back to (a saved setup, a last log or a saved
-workbook) it asks: pick up where you left off (keep the autosave, reopen the
-last log), start fresh (premade sheets and default math), or use a saved
-setup. "Ask me this when the app opens" turns the question off. Applying a
-setup writes the stores and tells an open Viewer to swap its workbook
-(`onWorkbook`), so it works with or without a log open.
+`state/session.ts` keeps the config folder in step with the stores:
+
+- `startSession` runs in `main.tsx` before the first render. It asks
+  `LiveService.Stock` for the stock setup, which `setStockSetup` lays over
+  the defaults in `originalSetup`, and for the sample log. With no
+  `session.json`, no saved workbook and no last log it applies the original
+  view. Once per config folder (`sampleShown` in `session.json`), when there
+  is no last log, `App` opens the sample log (`firstBootLog`) instead of
+  asking how to start, and a view with no start/finish line is given the
+  stock one so the sample shows laps. Likewise once per config folder
+  (`dampersOffered`), a view with no damper table is given the stock one.
+  `App` shows a "SAMPLE LOG" label while the open log is `sampleLog()`. It reads
+  `session.json` (`LiveService.LoadSession`), restores the other stored
+  choices, then applies the setup in use from its file, or the unnamed view
+  when no setup is in use or its file is gone. With no `session.json` it
+  keeps what localStorage had, which moves an older install's view into the
+  folder. Rendering waits at most 3 s for it.
+- Every `save` in `state/storage.ts` calls the `onStored` listeners. The
+  session debounces these (`SAVE_DELAY_MS`) and writes the setup in use with
+  `SavePreset`, then `session.json` with `SaveSession`, skipping a file
+  whose text has not changed. Writes run one at a time, and a waiting one
+  is sent early on `pagehide`. A failed write shows in `saveState` and is
+  retried after `SAVE_RETRY_MS`.
+- `session.json` holds `setup` (the name in use, or empty), `lastLog`,
+  `askOnStart`, `unnamed` (the view that is not a setup), `sampleShown`,
+  `dampersOffered` and `other` (every remaining `dawg.` localStorage entry, as stored).
+- `openSetup`, `createSetup`, `removeSetup`, `openUnnamed`, `startFresh` and
+  `importSetup` first write any waiting change to the setup it belongs to,
+  then switch. `createSetup` starts from `originalSetup` or from the stores.
+  Leaving the unnamed view keeps a copy of it in `session.json`; deleting
+  the setup in use, Start fresh and Import setup go back to it.
+
+localStorage is still what the stores read and write, so the app works when
+the backend cannot be reached; the folder wins when both exist. When the app
+opens and there is something to go back to (a saved setup, a last log or a
+saved workbook) it asks: pick up where you left off (reopen the last log),
+start fresh (premade sheets and default math in the unnamed view), or use a
+saved setup. "Ask me this when the app opens" turns the question off.
+Applying a setup writes the stores and tells an open Viewer to swap its
+workbook (`onWorkbook`), so it works with or without a log open. `App` shows
+the setup in use and `saveState` next to the Setups button.
 
 Made channels (group Math) have a delete button in the channel list, which
 removes the math channel and takes it out of every panel. "Reset to defaults"
@@ -498,8 +598,53 @@ log path in localStorage (`launchMarks.v1`).
 
 ### Car specs (data/car.ts, views/CarView.tsx)
 
-The Car tab edits the profile's `car:` section. Zero or missing values use
-typical FSAE numbers, so the analysis works before anyone fills them in.
+The Car tab edits the profile's `car:` section. `withDefaults(car, stock)`
+resolves each value: the profile's, else the stock G26 car's
+(`Info.stockCar`), else a typical FSAE number (`DEFAULT_CAR`), so the
+analysis works before anyone fills them in. `stockKeys` lists the values
+taken from the stock car; the Car tab tags those "G26 stock" and counts them
+in a note, `SimView` says how many the simulation is running on, and the
+Engine page tags its peak tiles and chart when the torque curve is the stock
+one. `useCar` returns the same object until a value changes, so the
+simulation is not rerun by unrelated profile reloads.
+
+"Import car values…" sends the text of a picked device file to
+`LiveService.ReadCarFile` and puts the returned car into the form's draft
+through `withDefaults`. It only fills the page; Save is still what writes the
+profile.
+
+Save (`forProfile(car, base, entered)`) leaves a value out of the profile
+while it is still the stock or typical one and was not in the profile
+before, so a value nobody has set keeps its tag after the page is saved and
+follows the stock car if a later version changes it.
+
+The torque curve is a list of `[rpm, N·m]` points at the crank
+(`components/TorqueEditor.tsx`). With fewer than two points in the profile
+the car uses `PLACEHOLDER_TORQUE`, a stand-in restricted 600 cc curve;
+`hasTorqueCurve` tells the two apart so the UI can say the curve is not the
+team's, and `forProfile` saves an empty list rather than writing the stand-in
+into the profile. `SimView` shows the "Not your engine" alert above every Sim
+page while the stand-in is in use, quoting its peak torque and power;
+`carEntered` (data/car.ts) tells whether the profile holds any car value at
+all, in which case the alert also names `Info.configDir.path`. "Import dyno file…" reads a CSV with `parseTorqueCsv`
+(`analysis/sim/torqueCsv.ts`): any common delimiter, an optional header,
+torque in N·m or lb·ft or power in kW or hp, thinned to at most 60 points.
+"Measured at the wheels" divides by the drivetrain efficiency to get crank
+torque.
+
+The tire model card (`components/TireEditor.tsx`) lists the Magic Formula
+coefficients by their MF 5.2 names. A blank box means "use the value built
+from the simple inputs", shown as the placeholder, so only typed or imported
+coefficients are stored in the profile's `tire` map. It plots force against
+slip angle and slip ratio at half, one and one and a half times the nominal
+load and shows B, C, D, E and the slip at the peak. Importing a `.tir` file
+also sets Peak μ and Cornering μ to the file's values, because the Launch and
+Aero panels read those.
+
+The Suspension section takes springs, motion ratios, anti-roll bars, track
+widths, roll centers, unsprung mass and tire rate; the summary under it
+(wheel rates, ride frequencies, roll stiffness, roll gradient, share of
+lateral load transfer) comes from `analysis/sim/suspension.ts`.
 
 ### Car map (components/CarDiagram.tsx, data/sensors.ts)
 
@@ -532,7 +677,7 @@ draws the tyre-only line (μ), the limit with the entered aero, and a weighted
 least-squares fit of envelope = a + b·v² through the bands; a is the μ the
 data shows and 2·b·W ÷ (ρ·a) the ClA it shows. "Grip used" is the envelope
 over the limit, averaged by sample count below and above the middle speed.
-If the data's ClA is under 70% of the entered one the panel says so. Like the
+If the data's ClA is under 70% of the entered one the panel says so. The panel reads the filtered `Lat G` and `Long G` channels when the log has them, names the channels it used next to the legend, and has a Data choice to switch to the raw accelerometer channels. Like the
 G-G envelope, the bands are reused while the range is changing.
 
 ### GPS gap filling (analysis/fusion.ts)
@@ -551,6 +696,13 @@ in the Laps tab.
 
 ### Channel settings and groups
 
+`data/origin.ts` classifies every channel as measured, filtered, calculated or
+theoretical from its id, group and (for math channels) expression. Channels
+that are not raw measurements get the word appended to their label when they
+are built (`withMeta`, `derivedChannels`, `mathChannels`, `simChannels`), so
+legends, axes and pickers all show it; the channel list shows it as a tag on
+every row instead.
+
 `useAnalysis` applies the profile's channel settings (title, colour, unit,
 decimals, group) to the loaded log every time the profile changes, so an edit
 shows at once without reloading. `name` stays the raw channel name, which math
@@ -559,13 +711,268 @@ a `.bin` or long CSV is open reloads it so the backend applies it; for a wide
 CSV (already converted) the Viewer converts that column itself as
 new(old⁻¹(value)), assuming the file was made with the previous calibration.
 
+### Simulated channels (viewer/simChannels.ts, viewer/useSimChannels.ts)
+
+`useSimChannels` wraps the result of `useAnalysis` and, when the Sim tab's
+"Simulated channels in the Viewer" box is ticked, appends the group `Sim`:
+`Sim Speed` (in the log's speed unit), `Sim Long G`, `Sim Lat G`, `Sim Gear`,
+`Sim RPM` and `Sim Time Gap` (real − simulated time since the start of the
+lap, s). Each timed lap (the first 60) is rebuilt as a track and simulated
+with the Car tab's car, and the result is written back onto the log's own
+samples by lap distance, so the channels behave like any other in time plots,
+lap overlays, XY plots and math. Samples outside timed laps are NaN. The
+filter dialog's "Every sensor" button skips them, as it does math and
+analysis channels.
+
+A lap is treated as closed when its end is within 25 m of its start, and as a
+standing start when it begins below 1.5 m/s; other laps enter at the logged
+speed.
+
+## Sim tab (views/SimView.tsx, sim/, analysis/sim/)
+
+The simulator answers "what should this car be able to do" from the Car tab's
+numbers and compares it with a log. Everything numerical is in
+`analysis/sim/` as pure functions of a `CarSpecs` (no React, no stores), which
+is what the tests exercise; `sim/` and `views/SimView.tsx` only lay the
+results out. `SimView` takes the Viewer's open session, runs it through
+`useAnalysis` for distance, laps and filled GPS, and works without a log
+too.
+
+### Model
+
+It is a point-mass, quasi-steady-state model: at every speed the car has a
+most-it-can-do in each direction, and a run is stitched together from those
+limits. It does not model transients, dampers, tire temperature or the driver.
+
+- `powertrain.ts`: torque is interpolated from the curve and held flat
+  outside it. `wheelForce` is torque × overall ratio × `driveEff` ÷ tire
+  radius, zero above redline; in the launch gear below the clutch speed the
+  engine is held at `launchRpm` (peak-torque RPM if unset) as if the clutch
+  were slipping. `shiftPoints` finds, for each gear, the speed where the next
+  gear starts to give more force, or redline.
+- `suspension.ts`: wheel rate = spring × motion ratio², in series with the
+  tire for ride rate; ride frequency from the sprung corner mass; roll
+  stiffness per axle from wheel rates over the track width plus the bar; roll
+  gradient from the sprung mass's roll arm; lateral load transfer per axle
+  from the unsprung mass, the roll center height and the axle's share of roll
+  stiffness.
+- `tire.ts`: the Pacejka Magic Formula, F = D·sin(C·atan(B·s − E·(B·s −
+  atan(B·s)))), in the MF 5.2 pure-slip form without camber. For cornering,
+  D = (pDy1 + pDy2·dfz)·Fz, the stiffness K = pKy1·Fz0·sin(pKy4·atan(Fz ÷
+  (pKy2·Fz0))) with pKy4 = 2 unless a file fits it, and B = K ÷ (C·D); drive and brake use the pDx/pKx set with
+  slip ratio. `tireOf` builds the coefficients: anything in the profile's
+  `tire` map wins, and the rest comes from the Car tab's simple values (peak
+  μ, cornering μ, grip kept at double load) with typical shape and stiffness
+  numbers, so the model works before anyone has tire data. `axlePeak` finds
+  the most two tires at different loads can give at one shared slip angle,
+  which is a little less than the sum of their separate peaks.
+  `combinedEnvelope` runs the MF combined-slip weighting functions (rBx, rCx,
+  rBy, rCy) over a grid of slip angle and slip ratio and returns how much
+  drive or brake force is left for each share of cornering force in use.
+  `parseTir` reads those coefficients from an MF 5.2 or MF 6 `.tir` file, or
+  from a MATLAB `.m` tire model that assigns the same names, applying the
+  scaling factors and sign conventions. The cornering limit is never taken
+  beyond the file's tested slip angle (`ALPMAX`). Drive, brake and
+  combined-slip numbers are skipped when the file's slip-ratio range is
+  empty, since they are then template values, and the import note says when
+  a cornering fit has no peak or is lopsided left to right. Curvature uses
+  the average of the left and right branches.
+- `grip.ts`: `cornering` finds the highest lateral g at which neither axle
+  needs more than `axlePeak` gives after load transfer and downforce, and
+  reports how hard each end is working, which is the understeer/oversteer
+  answer. `handling` adds the linear-range understeer gradient from the axle
+  cornering stiffnesses and the slip angle each axle runs at. `tractionForce` (rear-drive, with longitudinal load transfer) and
+  `brakeForce` are found the same way. `buildLimits` tabulates all of them,
+  drive force in the best gear, and resistance (drag + rolling) every
+  0.25 m/s up to 80 m/s, and finds top speed where drive meets resistance,
+  capped at redline in top gear.
+- `straight.ts`: `simulateRun` time-steps a standing start with gear changes
+  (no drive for `shiftTime`) and reports 75 m, 0–60 and 0–100 km/h times and
+  how long the car was traction-limited.
+- `lapsim.ts`: `simulateLap` works on a track given as distance and
+  curvature. Corner speed at each point comes from the lateral limit; a
+  forward pass accelerates from each point as hard as the engine and the
+  remaining grip allow (the tire's combined-slip envelope), carrying the gear
+  as state
+  (upshift at the shift speed, no drive for `shiftTime`, downshift only once
+  10% below the lower gear's shift speed so the car cannot hunt between
+  gears); a backward pass applies the braking limit. Closed tracks are run as
+  three laps and the middle one is kept, so the lap starts and ends at
+  matching speeds. Every point is labelled with what limits it (`LIMIT`:
+  braking, cornering, traction, power, shifting).
+
+### Tracks (analysis/sim/simtrack.ts)
+
+A `SimTrack` is distance, curvature and an x/y path for drawing.
+`skidpadTrack` and `straightTrack` are the two event shapes;
+`segmentsTrack` builds one from typed lines such as `straight 60` and
+`left 9 180deg`. `trackFromLog` rebuilds a logged lap on a 1 m grid. Its
+default takes curvature from the car's own motion, lateral g ÷ speed², after
+a 2 Hz zero-phase low-pass, because that is clean wherever the car has an
+accelerometer; the alternative differentiates the smoothed GPS path, with the
+sign checked against lateral g. Curvature is clamped to a 4 m radius. The lap
+page offers both and the smoothing length, since too little smoothing turns
+noise into corners and too much rounds real corners off and makes the lap too
+fast.
+
+`segmentsTrack` places its points exactly along each straight and arc, so a
+typed circuit that really closes ends where it started.
+
+### Track files (analysis/sim/trackfile.ts)
+
+`readTrackFile(name, bytes)` turns an imported file into either section lines
+for the typed track or an outline of points:
+
+- `parseOltra` reads an OptimumLap `.OLTra` track. The format is not
+  published; the reader relies on what a real file shows: .NET `BinaryWriter`
+  output, a flag byte, then length-prefixed UTF-8 strings (file version,
+  dates, id, name, circuit type…) and, further on, three arrays in a row, each
+  an `int32` count followed by that many `float64`s: section length (m),
+  corner radius (m, 0 for a straight) and direction (+1 left, −1 right,
+  0 straight). It finds the arrays by looking for three equal counts whose
+  third array holds only −1, 0 and 1.
+- `parseTrackTable` reads a table of sections (type, length, radius).
+- `parsePathTable` reads points: `x`/`y` (or `x_m`/`y_m`) in metres or
+  latitude/longitude, with an optional width (`width`, or `w_tr_right_m` +
+  `w_tr_left_m`). GPX (`trkpt`/`rtept`), KML (`coordinates`) and GeoJSON (the
+  longest coordinate list) are read as latitude/longitude outlines.
+
+An outline counts as a closed loop when its ends are within 15 m or four
+average point spacings of each other. `sim/importTrack.ts` puts the result
+into the simulator's settings.
+
+### Outlines and the ideal line (analysis/sim/raceline.ts)
+
+`trackFromPath` builds a `SimTrack` from points: outlines sparser than 1.5 m
+are first rounded with a centripetal Catmull-Rom spline, the path is resampled
+every 1.5 m, smoothed with a few shrink-free (Taubin) passes, given curvature
+from the circle through each three neighbouring points and finally
+interpolated onto the 0.5 m grid the lap simulation is run on. `fromLatLon`
+converts latitude/longitude to local metres.
+
+A recorded GPS path needs more than that: a centimetre of position noise at
+1.5 m spacing is a curvature error near 0.01 1/m, which is most of a g at
+speed. With `smoothM` set, `trackFromPath` instead averages the positions
+twice over that many metres, takes curvature from points 2 m either side and
+averages the curvature over the same distance, as `trackFromLog` does for its
+GPS source. The driven line of a logged lap is built this way with the Lap
+page's smoothing (at least 1.5 m); an outline uses `PathTrack.smooth`, which
+is 3 m for an imported GPX file and 0 otherwise.
+
+`racingLine(track, room, weight)` moves each point of the 1.5 m path sideways,
+at most `room` metres, to minimise the sum of squared second differences of
+the path (its bending) plus `weight` times the squared first differences (its
+length). It is solved by projected successive over-relaxation, coarse grid
+first (6 m, 3 m, 1.5 m). Because moving points along the original normals
+bunches them on the inside of corners and biases that sum, the result is then
+re-spaced evenly along itself and solved again three times, with the limits
+recomputed from each point's distance to the original path. An open track
+keeps its start on the original path; a track marked closed whose ends do not
+meet is treated as open with both ends held.
+
+`idealLine` runs `racingLine` for six weights (`LINE_WEIGHTS`, from pure
+minimum bending to strongly favouring a short path) and returns the one with
+the lowest simulated lap time, with the distance along the original path and
+the sideways offset of every point for plotting. This is a search within one
+family of smooth lines, not a minimum-time optimisation.
+
+### Comparing with the log (analysis/sim/fromlog.ts)
+
+- `correlate` puts the real speed onto the simulated lap's distance grid and
+  returns the lap-time gap, the average and RMS speed difference, R², the
+  share of the lap where the real car is within 3% of the simulated speed,
+  and the time lost split by what was limiting the simulated car at that
+  point. A loss under "power" on a car with good grip numbers points at the
+  torque curve or the driver's throttle; a loss under "cornering" points at
+  the tire and aero numbers or at line.
+- The lap page's envelope table compares the 98th percentile of the real
+  lap's lateral, braking and accelerating g with the same percentile of the
+  simulated lap, so a tire μ that is set too high or too low shows as a ratio
+  away from 1. The real signals are low-passed at 2 Hz first so vibration is
+  not counted as grip.
+- `logInputs` (viewer/simChannels.ts) gathers what the comparison needs from
+  a log. An accelerometer channel with no unit is taken as m/s² when more
+  than 2% of its samples are beyond ±4, since no car pulls 4 g; otherwise it
+  is taken as g (`accelInG` in `analysis/accel.ts`).
+- `torqueFromLog` estimates the torque curve from the log: full-throttle
+  samples (throttle within the top 10% of its logged range, so raw sensor
+  counts work as well as percent), in a gear identified from
+  RPM ÷ speed within 5% of a known ratio, not traction-limited, are turned
+  into crank torque from mass × acceleration + resistance and binned every
+  250 rpm (at least 6 samples a bin). It uses the longitudinal accelerometer
+  when there is one and the slope of speed otherwise, where a three-part
+  slope check drops samples next to a shift. It leaves out rotating inertia,
+  so low gears read a few percent low, and it is only as good as the mass and
+  drag on the Car tab.
+
+### Pages (sim/)
+
+`SimView` computes the car's limits, the 75 m run and the chosen lap once and
+shows four headline numbers; the pages below draw from the same results.
+`state/sim.ts` persists the open page, track choice, sweep setup and the
+what-if changes (`sim.v1`).
+
+- What-if (`WhatIf.tsx`, `analysis/sim/sweep.ts`): `SIM_PARAMS` lists the
+  values that can be changed, with units and sensible sweep ranges;
+  `withOverrides` returns a changed copy of the car. Nothing is saved to the
+  profile. Every page then shows both cars.
+- Engine & gearing: torque and power, tire force per gear against the grip
+  limit and resistance, shift table, and the torque estimate with "Use this
+  as the car's curve" (`LiveService.SaveCar`).
+- Acceleration: the 75 m run against the log's best launch, found with the
+  launch analysis.
+- Lap (`useSimLap.ts`, `LapSection.tsx`, `SimTrackMap.tsx`): track choice,
+  speed trace with the limit strip, map coloured by limit or speed, time lost
+  by phase and the envelope table. `TrackTools.tsx` holds the online search
+  (`LiveService.FindTracks` / `TracksNear`, shown according to
+  `Info.trackSearch`) and the ideal-line controls; `importTrack.ts` the file
+  import. The chosen outline is stored with the other simulator settings
+  (`SimSettings.path`), so it survives a restart without another lookup.
+  With the ideal line on, `useSimLap` returns it as `line` next to the
+  unchanged main result: for typed and outline tracks it is worked out on the
+  track itself, for a logged lap on the lap's GPS path rebuilt with
+  `trackFromPath`, so both times in that comparison come from the same
+  geometry. The map then draws the line, the original path dashed and a band
+  as wide as the room plus the car, and can be zoomed and dragged.
+  `pace` is the best timed lap of the open log divided by the simulated time
+  of that same lap; the page multiplies theoretical times by it for the
+  "likely lap".
+  `trackLibrary.ts` turns the track on screen into the saved-track file
+  (`dawgViewerTrack: 1`, kind `segments` or `path`, with width and smoothing)
+  and back; `SavedTracks` in `TrackTools.tsx` lists, saves, opens and deletes
+  them through `LiveService`. A logged lap is saved as its raw GPS path plus
+  the smoothing in use, so opening it rebuilds the same driven line.
+  `simSession.ts` turns simulated laps into a `Session` for the Viewer; see
+  [Simulated sessions](#simulated-sessions).
+- Skidpad & balance: skidpad time and g on the 9.125 m radius (15.25 m inner
+  diameter plus half a 3 m lane), roll gradient, front share of lateral load
+  transfer, understeer gradient, front and rear slip angles, and which end
+  saturates first at skidpad speed and at 90 km/h.
+- Dampers (`DamperSection.tsx`, `analysis/sim/damper.ts`, `state/dampers.ts`):
+  `parseShockDyno` reads a shock dyno table and keeps, for every shock and
+  setting, the force at the highest speed of each dyno run with that run's
+  zero-speed force taken out, compression and rebound separately. Blank cells
+  are skipped, not read as zero. `dampingRatio` is force ÷ speed, times the
+  motion ratio squared, over 2·√(wheel rate × sprung corner mass). The parsed
+  table is kept in localStorage (`dampers.v1`), not in the profile.
+- Sweeps: one parameter stepped across a range against 75 m time, skidpad
+  time, lap time or top speed. Tire pressure is one of them: with the MF 6
+  pressure terms (pPy1–pPy4) set, `latCurve` scales cornering grip by
+  1 + pPy3·dp + pPy4·dp² and changes the stiffness curve, where dp is the
+  relative difference between running and nominal pressure.
+
+Charts are `components/SimChart.tsx`, a small SVG line/point chart sized by a
+`ResizeObserver`. uPlot is not used here because these plots are a few hundred
+points against speed, RPM or distance with no shared time axis.
+
 ## Live track map (live/LiveMap.tsx)
 
 The Live tab's "Track map" shows the car on the GPS trace with the last two
 minutes highlighted, and lap times from the same start/finish beacon as the
 Viewer. The map draws raw GPS (no gap filling). Lap timing only looks at rows newer than the last one it checked
 (found by time, since the store drops old rows), so it costs nothing per
-frame. The map re-fits the track as it grows until you zoom or pan.
+frame. The map re-fits the track as it grows until you zoom or pan. It takes
+the same map background as the Viewer's maps.
 
 ## Viewer module boundaries
 

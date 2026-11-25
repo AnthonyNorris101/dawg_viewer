@@ -87,6 +87,15 @@ disk (see [backend.md](backend.md#internallive)). Its memory
 stays bounded by the live pipeline. Separately, opening a log retains a loaded
 table in `internal/logdata` until its one-time URL is fetched.
 
+The backend reaches the internet for map backgrounds, and
+only after someone picks one: `internal/maptiles` downloads the tiles a map is
+showing, keeps them in the config folder and serves them to the webview from
+the app's own asset server (see [backend.md](backend.md#internalmaptiles)).
+The one other case is the simulator's track search: `internal/tracks` asks
+OpenStreetMap servers for a track outline when a search button is pressed
+(see [backend.md](backend.md#internaltracks)).
+The vehicle simulation itself runs entirely in the frontend.
+
 ## How backend and frontend talk
 
 ```

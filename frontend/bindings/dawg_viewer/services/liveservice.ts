@@ -11,6 +11,9 @@ import * as config$0 from "../internal/config/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as live$0 from "../internal/live/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as tracks$0 from "../internal/tracks/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -28,8 +31,16 @@ export function DeletePreset(name: string): $CancellablePromise<void> {
     return $Call.ByID(1585120215, name);
 }
 
+export function DeleteTrack(name: string): $CancellablePromise<void> {
+    return $Call.ByID(1886564495, name);
+}
+
 export function Disconnect(): $CancellablePromise<void> {
     return $Call.ByID(2835453409);
+}
+
+export function FindTracks(query: string): $CancellablePromise<tracks$0.Track[] | null> {
+    return $Call.ByID(2419266660, query);
 }
 
 export function Info(): $CancellablePromise<$models.Info> {
@@ -40,12 +51,24 @@ export function LoadPreset(name: string): $CancellablePromise<string> {
     return $Call.ByID(2258341564, name);
 }
 
+export function LoadSession(): $CancellablePromise<string> {
+    return $Call.ByID(3876827973);
+}
+
+export function LoadTrack(name: string): $CancellablePromise<string> {
+    return $Call.ByID(2011304986, name);
+}
+
 export function OpenConfigFolder(): $CancellablePromise<void> {
     return $Call.ByID(2093634333);
 }
 
 export function Presets(): $CancellablePromise<$models.Preset[] | null> {
     return $Call.ByID(716124029);
+}
+
+export function ReadCarFile(text: string): $CancellablePromise<config$0.Car> {
+    return $Call.ByID(3430966857, text);
 }
 
 export function Reload(): $CancellablePromise<$models.Info> {
@@ -64,6 +87,18 @@ export function SavePreset(name: string, data: string): $CancellablePromise<$mod
     return $Call.ByID(3629192645, name, data);
 }
 
+export function SaveSession(data: string): $CancellablePromise<void> {
+    return $Call.ByID(396518538, data);
+}
+
+export function SaveTrack(name: string, data: string): $CancellablePromise<$models.SavedTrack> {
+    return $Call.ByID(1301713413, name, data);
+}
+
+export function SavedTracks(): $CancellablePromise<$models.SavedTrack[] | null> {
+    return $Call.ByID(4279616738);
+}
+
 /**
  * SetLiveBackup turns the live backup log on or off, saves the choice to
  * settings.yaml and applies it to the running session without reconnecting.
@@ -74,4 +109,12 @@ export function SetLiveBackup(on: boolean): $CancellablePromise<$models.Info> {
 
 export function Status(): $CancellablePromise<live$0.Status> {
     return $Call.ByID(4184843501);
+}
+
+export function Stock(): $CancellablePromise<$models.Stock> {
+    return $Call.ByID(3949997287);
+}
+
+export function TracksNear(lat: number, lon: number): $CancellablePromise<tracks$0.Track[] | null> {
+    return $Call.ByID(214213245, lat, lon);
 }

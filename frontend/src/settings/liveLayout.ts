@@ -1,3 +1,5 @@
+import { noteStored } from '../state/storage'
+
 export type LiveLayoutMode = 'default' | 'bento'
 
 const KEY = 'dawg.live-layout-mode.v1'
@@ -13,6 +15,7 @@ export function loadLiveLayoutMode(): LiveLayoutMode {
 export function saveLiveLayoutMode(mode: LiveLayoutMode) {
   try {
     localStorage.setItem(KEY, mode)
+    noteStored()
   } catch {
     // The choice still works for this session.
   }

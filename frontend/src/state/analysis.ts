@@ -79,7 +79,7 @@ export const useTrack = () => useSyncExternalStore(track.subscribe, track.get)
 export const updateTrack = (patch: Partial<TrackSettings>) =>
   track.set({ ...track.get(), ...patch })
 
-const validSplits = (v: unknown): v is Record<string, number[]> =>
+export const validSplits = (v: unknown): v is Record<string, number[]> =>
   isObject(v) &&
   Object.values(v).every((a) => Array.isArray(a) && a.every((x) => typeof x === 'number'))
 
@@ -93,7 +93,7 @@ export function setSplits(path: string, times: number[]) {
   splits.set(all)
 }
 
-const validMarks = (v: unknown): v is Record<string, [number, number][]> =>
+export const validMarks = (v: unknown): v is Record<string, [number, number][]> =>
   isObject(v) &&
   Object.values(v).every(
     (a) =>

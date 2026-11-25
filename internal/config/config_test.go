@@ -1,6 +1,8 @@
 package config
 
 import (
+	"encoding/json"
+	"io"
 	"io/fs"
 	"math"
 	"os"
@@ -243,5 +245,99 @@ func TestSaveLiveBackupKeepsComments(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(old); string(b) != "device: g26-iltm\nlive_backup: true\n" {
 		t.Fatalf("missing key should be added at the end:\n%s", b)
+	}
+}
+
+func TestTrackSearchSettings(t *testing.T) {
+	dir := t.TempDir()
+	write := func(body string) Settings {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, "settings.yaml"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		s, err := LoadSettings(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	s := write("device: logger\n")
+	if s.TrackSearch.Geocoder != "" || len(s.TrackSearch.Servers()) == 0 {
+		t.Fatalf("defaults = %+v, want name search off and the built-in Overpass servers", s.TrackSearch)
+	}
+	s = write("track_search:\n  geocoder: https://nominatim.example/search\n  overpass:\n    - https://overpass.example/api/interpreter\n")
+	if s.TrackSearch.Geocoder != "https://nominatim.example/search" || len(s.TrackSearch.Servers()) != 1 || s.TrackSearch.Validate() != nil {
+		t.Fatalf("got %+v", s.TrackSearch)
+	}
+	s = write("track_search:\n  overpass: []\n")
+	if len(s.TrackSearch.Servers()) != 0 {
+		t.Fatalf("overpass: [] must turn lookups off, got %v", s.TrackSearch.Servers())
+	}
+	s = write("track_search:\n  geocoder: nominatim.example\n")
+	if s.TrackSearch.Validate() == nil {
+		t.Fatal("want an error for an address without http(s)://")
+	}
+}
+
+func TestStock(t *testing.T) {
+	car := StockCar()
+	if car.Mass != 277 || car.Redline != 13000 || len(car.Torque) != 19 || car.Tire["pdy1"] == 0 {
+		t.Fatalf("stock car not read: %+v", car)
+	}
+	if car.AeroFront != 0 || len(car.Gears) != 0 {
+		t.Fatalf("stock car carries values it has no source for: %+v", car)
+	}
+	var setup struct {
+		Version int `json:"dawgViewerSetup"`
+		Track   struct {
+			Beacon *struct{ Lat, Lon float64 } `json:"beacon"`
+		} `json:"track"`
+		Dampers struct {
+			File     string `json:"file"`
+			Settings []struct {
+				Shock  string `json:"shock"`
+				Points []struct{ V, Comp, Reb float64 }
+			} `json:"settings"`
+		} `json:"dampers"`
+	}
+	if err := json.Unmarshal([]byte(StockSetup()), &setup); err != nil {
+		t.Fatal(err)
+	}
+	if setup.Version != 1 || setup.Track.Beacon == nil || setup.Track.Beacon.Lat == 0 {
+		t.Fatalf("stock setup: %+v", setup)
+	}
+	if len(setup.Dampers.Settings) != 18 || len(setup.Dampers.Settings[0].Points) == 0 || setup.Dampers.File == "" {
+		t.Fatalf("stock damper table: %d settings from %q", len(setup.Dampers.Settings), setup.Dampers.File)
+	}
+}
+
+func TestSampleLogIsOfferedOnce(t *testing.T) {
+	dir := t.TempDir()
+	if err := seed(dir); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := LoadSettings(dir)
+	sample := SamplePath(dir, s)
+	if sample == "" || filepath.Base(sample) != SampleLogName {
+		t.Fatalf("sample log not written: %q", sample)
+	}
+	f, err := os.Open(sample)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := make([]byte, 28)
+	_, err = io.ReadFull(f, head)
+	f.Close()
+	if err != nil || string(head) != "timestamp_ms,id,signal,value" {
+		t.Fatalf("sample log does not start like a log: %q %v", head, err)
+	}
+	if err := os.Remove(sample); err != nil {
+		t.Fatal(err)
+	}
+	if err := seed(dir); err != nil {
+		t.Fatal(err)
+	}
+	if SamplePath(dir, s) != "" {
+		t.Fatal("a deleted sample log came back")
 	}
 }
